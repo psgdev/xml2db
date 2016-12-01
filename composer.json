@@ -10,9 +10,15 @@
         }
     ],
     "minimum-stability": "dev",
+    "repositories": [
+        {
+            "url": "https://github.com/psgdev/musqlidb.git",
+            "type": "git"
+        }
+    ],
     "require": {
         "php": ">=5.4",
-        "psgdev/musqlidb": "1.*"
+        "psgdev/musqlidb": "dev-master"
     },
     "autoload": {
         "psr-4": {

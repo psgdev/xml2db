@@ -13,7 +13,8 @@
     "repositories": [
         {
             "url": "https://github.com/psgdev/musqlidb.git",
-            "type": "git"
+            "type": "git",
+            "reference": "master"
         }
     ],
     "require": {

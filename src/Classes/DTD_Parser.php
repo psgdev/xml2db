@@ -10,9 +10,7 @@
 
 namespace Xml2db;
 
-use spec\Prophecy\Exception\Doubler\ClassCreatorExceptionSpec;
 use Xml2db\Parser_Helper;
-
 
 class DTD_Parser
 {

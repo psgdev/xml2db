@@ -10,6 +10,7 @@
 
 namespace Xml2db;
 
+use Xml2db\Xml_Parser;
 use Xml2db\Parser_Helper;
 
 class DTD_Parser

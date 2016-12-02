@@ -22,7 +22,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Xml2db\\": "src/Classes/"
+            "Xml2db\\": "src/Xml2db/"
         }
     }
 }

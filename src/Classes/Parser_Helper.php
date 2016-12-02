@@ -8,7 +8,7 @@
  * @version aa-v1.0
  */
 
-namespace Psgdev\Xml2db;
+namespace Xml2db;
 
 class Parser_Helper
 {

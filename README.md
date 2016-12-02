@@ -28,6 +28,8 @@ Psgdev\Xml2db\Xml2dbServiceProvider::class
 
 - publish this vendor to copy xml2db.php config file from Config dir
 
+- create "xml2db" directory in storage dir
+
 
 Example of usage in Doc dir. 
 (Create console command when writing an xml parser using this plugin.)

@@ -8,9 +8,10 @@
  * @version aa-v1.0
  */
 
-namespace Psgdev\Xml2db;
+namespace Xml2db;
 
-use Psgdev\Xml2db\Parser_Helper;
+use spec\Prophecy\Exception\Doubler\ClassCreatorExceptionSpec;
+use Xml2db\Parser_Helper;
 
 
 class DTD_Parser

@@ -8,10 +8,10 @@
  * @version as-v1.0
  */
 
-namespace Psgdev\Xml2db;
+namespace Xml2db;
 
-use Psgdev\Xml2db\DTD_Parser;
-use Psgdev\Musqlidb\Musqlidb;
+use Xml2db\DTD_Parser;
+use Musqlidb\Musqlidb;
 
 class Xml_Parser
 {

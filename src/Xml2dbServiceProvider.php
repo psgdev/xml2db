@@ -1,6 +1,6 @@
 <?php
 
-namespace Psgdev\Xml2db;
+namespace Xml2db;
 
 use Illuminate\Support\ServiceProvider;
 

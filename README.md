@@ -1,10 +1,10 @@
 This library is not tend to be used outside application and environment where it had been built. However, you can use it without warranty of any kind.
 
-Requires musqlidb from psgdev (added to plugin's composer.json)
+Requires musqlidb from psgdev.
 
 How to install
 
-add to application's composer.json the required lines and repositories
+add to application's composer.json the require lines and repositories
 
 "require": {
 "psgdev/musqlidb": "dev-master",
@@ -24,7 +24,7 @@ add to application's composer.json the required lines and repositories
 
 
 - add this line to app.php, providers section
-Psgdev\Xml2db\Xml2dbServiceProvider::class
+  Xml2db\Xml2dbServiceProvider::class
 
 - publish this vendor to copy xml2db.php config file from Config dir
 

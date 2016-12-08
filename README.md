@@ -24,7 +24,7 @@ add to application's composer.json the require lines and repositories
 
 
 - add this line to app.php, providers section
-  Xml2db\Xml2dbServiceProvider::class
+  PsgdevXml2db\Xml2dbServiceProvider::class
 
 - publish this vendor to copy xml2db.php config file from Config dir
 

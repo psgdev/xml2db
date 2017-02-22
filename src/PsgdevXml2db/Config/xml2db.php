@@ -3,7 +3,7 @@
 return [
 
     'dumpFilePath' => storage_path('logs/xml2db'),
-    'parsedXmlDbNameFixPart' => 'demo_',
+    'parsedXmlDbNamePrefix' => 'demo_',
     'databaseConnections' =>
         [
             'xml2db' => [

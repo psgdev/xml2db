@@ -68,7 +68,7 @@ if (!file_exists($dtdFilePath)) {
 }
 
 $databaseCode = $acDataMatch[1];
-$newDbName = config('xml2db.parsedXmlDbNameFixPart') . $databaseCode;
+$newDbName = config('xml2db.parsedXmlDbNamePrefix') . $databaseCode;
 
 // create database and add app user
 $createDb = Musqlidb::getInstance($xml2dbConnection);

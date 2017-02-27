@@ -278,7 +278,7 @@ class DTD_Parser
      * @param string $node
      * @param string $parent
      */
-    protected function buildStructure($node, $parent)
+    protected function buildStructure($node, $parent = '')
     {
 
         if (!empty($node)) {
@@ -441,7 +441,7 @@ class DTD_Parser
      * @param string $parentName
      * @return string
      */
-    protected function setRelationType($elemName, $parentName)
+    protected function setRelationType($elemName, $parentName = '')
     {
         $elemNameLower = strtolower($elemName);
         if ($this->fields[$elemName]['type'] == self::RELATION_TYPE_OPTION) {
@@ -464,7 +464,7 @@ class DTD_Parser
      * @param string $parentName
      * @return bool
      */
-    protected function checkIgnored($elemName, $parentName)
+    protected function checkIgnored($elemName, $parentName = '')
     {
 
         if ($this->hasIgnored == false) {
@@ -506,7 +506,7 @@ class DTD_Parser
      * @param string $parentName
      * @return bool
      */
-    protected function checkMergedRelated($mergedArray, $elemName, $parentName)
+    protected function checkMergedRelated($mergedArray, $elemName = '', $parentName = '')
     {
 
         if (empty($parentName)) {
@@ -542,7 +542,7 @@ class DTD_Parser
      * @param string $parent
      * @param string $cond
      */
-    protected function prepareTableStructure($node, $parent, $cond = 'table')
+    protected function prepareTableStructure($node, $parent = '', $cond = 'table')
     {
 
         if (!empty($node)) {
@@ -669,7 +669,7 @@ class DTD_Parser
      * @param string $parent
      * @param string $cond
      */
-    protected function relationalTableStructure($node, $parent, $cond = 'table')
+    protected function relationalTableStructure($node, $parent = '', $cond = 'table')
     {
 
 
@@ -911,7 +911,7 @@ class DTD_Parser
      * @param string $elem
      * @param string $node
      */
-    protected function pushToBeginning($elem, $node)
+    protected function pushToBeginning($elem, $node = '')
     {
 
         if (isset($this->dbStructure['table'][$node]['field']) && is_array($this->dbStructure['table'][$node]['field'])) {

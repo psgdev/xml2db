@@ -46,7 +46,7 @@ class Xml_Parser
      * @param array $dtdRelationalStructure
      * @param string $database
      */
-    public function __construct($xmlFilePath = '', $dtdRelationalStructure = [], $database)
+    public function __construct($xmlFilePath = '', $dtdRelationalStructure = [], $database = '')
     {
 
         $this->xmlPath = $xmlFilePath;
@@ -109,7 +109,7 @@ class Xml_Parser
      * @param string $parentName
      * @return boolean
      */
-    protected function checkTextType($typeArray, $elemName, $parentName = '')
+    protected function checkTextType($typeArray, $elemName = '', $parentName = '')
     {
 
         if ($this->textField == false) {
@@ -300,7 +300,7 @@ class Xml_Parser
         $this->load($xml, $this->dtdStructure['root_tag_table']);
     }
 
-    protected function load($xml, $tagTable, $parentKey = null, $parentTable = '')
+    protected function load($xml, $tagTable = '', $parentKey = null, $parentTable = '')
     {
 
         foreach ($tagTable as $table => $xmlTag) {
@@ -521,7 +521,7 @@ class Xml_Parser
      * @param string $table
      * @return int
      */
-    protected function insertTableRow($saveTag, $table)
+    protected function insertTableRow($saveTag, $table = '')
     {
 
         //if(in_array($table, $this->ignoredTable)) return 0;

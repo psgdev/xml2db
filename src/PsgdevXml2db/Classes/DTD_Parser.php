@@ -608,7 +608,7 @@ class DTD_Parser
 
                                     if (!$this->checkIgnoredTable($node)) $this->dbStructure['tag_table'][$node] = $node;
 
-                                } elseif ($this->optimisation == true && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->structure[$parent]['type'] == self::RELATION_TYPE_ROOT) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
+                                } elseif ($this->optimisation == true && ( $this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent) ) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
                                     //if (!isset($this->dbStructure['root_tag_table'][$parent]))
                                     if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $node;
 
@@ -689,7 +689,7 @@ class DTD_Parser
 
 
                         if ($this->structure[$node]['type'] != self::RELATION_TYPE_CONNECTOR && $this->structure[$node]['data_type'] != self::DATA_TYPE_MULTI_ROW
-                            && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->structure[$parent]['type'] == self::RELATION_TYPE_ROOT)
+                            && ( $this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent) )
                             && !isset($this->structure['multiParent'][$node])
                         ) {
 // tables set as fieldList and dataMixed or dataBlock
@@ -884,6 +884,32 @@ class DTD_Parser
                 $this->relationalTableStructure($val, $node, $this->structure[$node]['relationType'][$val]);
             }
         }
+    }
+
+    /**
+     * verify data type root to use as dataConnector
+     *
+     * @param string $parent
+     * @return string
+     */
+    protected function verifyRootDataConnector($parent)
+    {
+
+        if( !isset($this->structure[$parent]) ) return false;
+        //print_r($this->structure[$parent]['relation'][0]);
+        $pName = strtolower($parent);
+
+        if ( $this->structure[$parent]['type'] == self::RELATION_TYPE_ROOT && isset($this->structure[$parent]['relation'][0]) ) {
+
+            $nName = strtolower($this->structure[$parent]['relation'][0]);
+
+            if( strstr($pName, $nName) && ( strlen($pName) - strlen($nName) <= 2) ) {
+                return true;
+            };
+
+        }
+
+        return false;
     }
 
     /**

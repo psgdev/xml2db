@@ -25,11 +25,12 @@ class DTD_Parser
     /**
      * const
      */
+    const RELATION_TYPE_ROOT = 'root';
     const RELATION_TYPE_TABLE = 'table';
     const RELATION_TYPE_OPTION = 'option';
     const RELATION_TYPE_MERGE_NODE = 'mergeNode';
     const RELATION_TYPE_FIELD_LIST = 'fieldList';
-    const DATA_TYPE_CONNECTOR = 'dataConnector';
+    const RELATION_TYPE_CONNECTOR = 'dataConnector';
     const DATA_TYPE_BLOCK = 'dataBlock';
     const DATA_TYPE_MIXED = 'dataMixed';
     const DATA_TYPE_MULTI_ROW = 'dataMultiRow';
@@ -195,9 +196,9 @@ class DTD_Parser
         //echo Parser_Helper::nicePrint($this->dbStructure);
         $this->relationalTableStructure($this->rootElement);
 // 	} else {
-// 
-// 			$this->prepareTableStructure($this->rootElement, '', 'root');
-// 			$this->relationalTableStructure($this->rootElement, '', 'root');
+//
+// 			$this->prepareTableStructure($this->rootElement, '', self::RELATION_TYPE_ROOT);
+// 			$this->relationalTableStructure($this->rootElement, '', self::RELATION_TYPE_ROOT);
 // 	}
 
         $this->correctTableStructure();
@@ -223,7 +224,7 @@ class DTD_Parser
             }
 
             if (!strstr($elementDeclaration, ',')) {
-                return self::DATA_TYPE_CONNECTOR;
+                return self::RELATION_TYPE_CONNECTOR;
             }
 
             return 'fieldList';
@@ -305,10 +306,10 @@ class DTD_Parser
                     $this->dbStructure['root_tag_table'][$node] = $node;
                     //$this->structure[$node]['type'] = $this->fields[$node]['type'];
                 } else {
-                    //$this->structure[$node]['type'] = 'root';
+                    //$this->structure[$node]['type'] = self::RELATION_TYPE_ROOT;
                 }
 
-                $this->structure[$node]['type'] = 'root';
+                $this->structure[$node]['type'] = self::RELATION_TYPE_ROOT;
 
             } else {
                 $this->structure[$node]['type'] = $this->fields[$node]['type'];
@@ -347,7 +348,7 @@ class DTD_Parser
 
                     } else {
 
-                        if ($this->fields[$node]['type'] == self::DATA_TYPE_CONNECTOR) {
+                        if ($this->fields[$node]['type'] == self::RELATION_TYPE_CONNECTOR) {
                             if (Parser_Helper::isMultiple($this->fields[$node]['spec'])) {
                                 $this->structure[$node]['data_type'] = self::DATA_TYPE_MULTI_ROW;
 
@@ -558,7 +559,7 @@ class DTD_Parser
 
                             if (!$this->checkIgnoredTable($node) && !isset($this->dbStructure['root_tag_table'][$node])) {
 
-                                if ($this->optimisation == true && isset($this->structure[$node]) && $this->structure[$node]['type'] == self::DATA_TYPE_CONNECTOR) {
+                                if ($this->optimisation == true && isset($this->structure[$node]) && $this->structure[$node]['type'] == self::RELATION_TYPE_CONNECTOR) {
                                     $this->dbStructure['root_tag_table'][$node] = $this->structure[$node]['relation'][0];
                                 } else {
                                     $this->dbStructure['root_tag_table'][$node] = $node;
@@ -592,7 +593,7 @@ class DTD_Parser
 
                         } elseif ($this->dbStructure['table'][$node]['data_type'] == self::DATA_TYPE_BLOCK) {
 
-                            if ($this->optimisation == true && $this->structure[$parent]['type'] == self::DATA_TYPE_CONNECTOR && $this->structure[$parent]['data_type'] == self::DATA_TYPE_MIXED && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
+                            if ($this->optimisation == true && $this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR && $this->structure[$parent]['data_type'] == self::DATA_TYPE_MIXED && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
                                 // if (!isset($this->dbStructure['root_tag_table'][$parent]))
                                 if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $node;
                             } else {
@@ -601,13 +602,13 @@ class DTD_Parser
                             }
                         } else {
 
-                            if ($this->structure[$node]['type'] != self::DATA_TYPE_CONNECTOR) {
+                            if ($this->structure[$node]['type'] != self::RELATION_TYPE_CONNECTOR) {
 //print $node."::".$parent.'<br>';
                                 if (empty($parent)) {
 
                                     if (!$this->checkIgnoredTable($node)) $this->dbStructure['tag_table'][$node] = $node;
 
-                                } elseif ($this->optimisation == true && $this->structure[$parent]['type'] == self::DATA_TYPE_CONNECTOR && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
+                                } elseif ($this->optimisation == true && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->structure[$parent]['type'] == self::RELATION_TYPE_ROOT) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
                                     //if (!isset($this->dbStructure['root_tag_table'][$parent]))
                                     if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $node;
 
@@ -681,13 +682,16 @@ class DTD_Parser
                 switch ($cond) {
 
 // 		case "root":
-// 
+//
 // 		    break;
 
                     case "table":
 
 
-                        if ($this->structure[$node]['type'] != self::DATA_TYPE_CONNECTOR && $this->structure[$node]['data_type'] != self::DATA_TYPE_MULTI_ROW && $this->structure[$parent]['type'] == self::DATA_TYPE_CONNECTOR && !isset($this->structure['multiParent'][$node])) {
+                        if ($this->structure[$node]['type'] != self::RELATION_TYPE_CONNECTOR && $this->structure[$node]['data_type'] != self::DATA_TYPE_MULTI_ROW
+                            && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->structure[$parent]['type'] == self::RELATION_TYPE_ROOT)
+                            && !isset($this->structure['multiParent'][$node])
+                        ) {
 // tables set as fieldList and dataMixed or dataBlock
 //print $node.'::'.$parent.'<br>';
                             if ($this->optimisation == true && !isset($this->fields[$parent]['attlist'])) {
@@ -705,7 +709,7 @@ class DTD_Parser
                                         $this->pushToBeginning($pkey, $parent);
                                         $this->dbStructure['table'][$parent]['parent']["" . $this->structure[$parent]['parent'] . ""] = $pkey;
 //print '<br>tree:'.$connParent.'::'.$connParentParent.'::'.$connParentTop.'|<br>';
-                                    } elseif ($this->structure[$connParentTop]['type'] == self::DATA_TYPE_CONNECTOR) {
+                                    } elseif ($this->structure[$connParentTop]['type'] == self::RELATION_TYPE_CONNECTOR) {
                                         $pkey = "z_" . $this->structure[$connParentParent]['parent'] . "_ID";
                                         $this->pushToBeginning($pkey, $parent);
                                         $this->dbStructure['table'][$parent]['parent']["" . $this->structure[$connParentParent]['parent'] . ""] = $pkey;
@@ -739,7 +743,7 @@ class DTD_Parser
                                     $this->dbStructure['table'][$parent]['parent']["" . $connParentParent . ""] = $pkey;
 
 
-                                    if ($this->optimisation == true && !empty($this->structure[$connParentParent]['parent']) && $this->structure[$connParentParent]['type'] == self::DATA_TYPE_CONNECTOR) {
+                                    if ($this->optimisation == true && !empty($this->structure[$connParentParent]['parent']) && $this->structure[$connParentParent]['type'] == self::RELATION_TYPE_CONNECTOR) {
 
                                         $connParentTop = $this->structure[$connParentParent]['parent'];
 
@@ -754,7 +758,7 @@ class DTD_Parser
                                     }
                                 }
                             }
-                        } elseif ($this->structure[$node]['type'] != self::DATA_TYPE_CONNECTOR && $this->structure[$node]['data_type'] != self::DATA_TYPE_MULTI_ROW && !empty($this->structure[$node]['parent'])) {
+                        } elseif ($this->structure[$node]['type'] != self::RELATION_TYPE_CONNECTOR && $this->structure[$node]['data_type'] != self::DATA_TYPE_MULTI_ROW && !empty($this->structure[$node]['parent'])) {
 
 
                             $mParent = [];
@@ -773,7 +777,7 @@ class DTD_Parser
 
                                         $connParentParent = $this->structure[$connParent]['parent'];
 
-                                        if ($this->optimisation == true && $this->structure[$connParentParent]['type'] == self::DATA_TYPE_CONNECTOR) {
+                                        if ($this->optimisation == true && $this->structure[$connParentParent]['type'] == self::RELATION_TYPE_CONNECTOR) {
                                             $pkey = "z_" . $connParentParent . "_ID";
                                             $this->pushToBeginning($pkey, $node);
                                             $this->dbStructure['table'][$node]['parent']["" . $connParentParent . ""] = $pkey;
@@ -809,7 +813,7 @@ class DTD_Parser
                                             $this->dbStructure['table'][$node]['parent']["" . $connParentParent . ""] = $pkey;
                                         } else {
 
-                                            if ($this->optimisation == true && $this->structure[$parent]['type'] == self::DATA_TYPE_CONNECTOR && count($mParent) == 1) {
+                                            if ($this->optimisation == true && $this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR && count($mParent) == 1) {
 
                                                 $this->dbStructure['table'][$parent] = $this->dbStructure['table'][$node];
 
@@ -820,7 +824,7 @@ class DTD_Parser
                                                     $connParentParent = $this->structure[$connParent]['parent'];
                                                     $connParentTop = $this->structure[$connParentParent]['parent'];
 
-                                                    if ($this->structure[$connParentTop]['type'] == self::DATA_TYPE_CONNECTOR) {
+                                                    if ($this->structure[$connParentTop]['type'] == self::RELATION_TYPE_CONNECTOR) {
                                                         $pkey = "z_" . $this->structure[$connParentParent]['parent'] . "_ID";
                                                         $this->pushToBeginning($pkey, $parent);
                                                         $this->dbStructure['table'][$parent]['parent']["" . $this->structure[$connParentParent]['parent'] . ""] = $pkey;
@@ -847,7 +851,7 @@ class DTD_Parser
                                     }
                                 }
                             }
-                        } elseif ($this->structure[$node]['type'] == self::DATA_TYPE_CONNECTOR && !empty($this->structure[$node]['parent'])) {
+                        } elseif ($this->structure[$node]['type'] == self::RELATION_TYPE_CONNECTOR && !empty($this->structure[$node]['parent'])) {
 //print '4st:'.$node.'::'.$parent.'<br>';
                             //print_r($this->dbStructure['tag_table']);
                             $connParent = $this->structure[$node]['parent'];
@@ -855,7 +859,7 @@ class DTD_Parser
                             $parentPossible = array_keys($this->dbStructure['tag_table'], $connParent);
                             $parentPossibleDataConnnector = $parentPossible[0];
 
-                            if (!empty($connParentParent) && !empty($parentPossibleDataConnnector) && $this->structure[$connParentParent]['type'] == self::DATA_TYPE_CONNECTOR && $connParent !== $parentPossibleDataConnnector) {
+                            if (!empty($connParentParent) && !empty($parentPossibleDataConnnector) && $this->structure[$connParentParent]['type'] == self::RELATION_TYPE_CONNECTOR && $connParent !== $parentPossibleDataConnnector) {
                                 //print "<p>$node$parentPossibleDataConnnector</p>";
                                 $pkey = "z_" . $parentPossibleDataConnnector . "_ID";
                                 $this->pushToBeginning($pkey, $node);

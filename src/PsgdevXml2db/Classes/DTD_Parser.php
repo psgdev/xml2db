@@ -904,6 +904,11 @@ class DTD_Parser
             $nName = strtolower($this->structure[$parent]['relation'][0]);
 
             if( strstr($pName, $nName) && ( strlen($pName) - strlen($nName) <= 2) ) {
+
+                if( isset($this->dbStructure['root_tag_table'][$parent]) ) {
+                    $this->dbStructure['root_tag_table'][$parent] = $this->structure[$parent]['relation'][0];
+                }
+
                 return true;
             };
 

@@ -5,7 +5,7 @@
  * parse xml using parsed dtd and load the data into database
  *
  * @author Tibor(tibor@planetsg.com)
- * @version as-v1.0
+ * @version aa-v1.0
  */
 
 namespace PsgdevXml2db;
@@ -300,7 +300,14 @@ class Xml_Parser
         $this->load($xml, $this->dtdStructure['root_tag_table']);
     }
 
-    protected function load($xml, $tagTable = '', $parentKey = null, $parentTable = '')
+
+    /**
+     * @param string $xml
+     * @param array $tagTable
+     * @param int $parentKey
+     * @param string $parentTable
+     */
+    protected function load($xml, $tagTable = array(), $parentKey = null, $parentTable = '')
     {
 
         foreach ($tagTable as $table => $xmlTag) {

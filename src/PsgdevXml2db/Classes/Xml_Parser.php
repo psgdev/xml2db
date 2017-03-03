@@ -29,6 +29,7 @@ class Xml_Parser
     /**
      * protected var
      */
+    protected $dbx = null;
     protected $xmlPath;
     protected $dtdStructure;
     protected $fieldTypeText = []; // associative array table =>[keys]
@@ -54,6 +55,8 @@ class Xml_Parser
         $this->connectionArray = config('xml2db.databaseConnections.xml2db');
         $this->connectionArray['database'] = $database;
         $this->dumpFilePath = config('xml2db.dumpFilePath');
+
+        ///file_put_contents($this->dumpFilePath, '');
     }
 
     /**
@@ -83,9 +86,10 @@ class Xml_Parser
      *
      * @param array $tables
      */
-    public function setUTF8mb4Table($tables = []) {
-         if(is_array($tables))
-             $this->utf8mb4Table = $tables;
+    public function setUTF8mb4Table($tables = [])
+    {
+        if (is_array($tables))
+            $this->utf8mb4Table = $tables;
     }
 
 
@@ -147,28 +151,28 @@ class Xml_Parser
 
         foreach ($this->dtdStructure['table'] as $table => $desc) {
 
-            $db = Musqlidb::getInstance($this->connectionArray);
+            $this->dbx = Musqlidb::getInstance($this->connectionArray);
             if (in_array($table, $this->utf8mb4Table)) { // force UTF8mb4
-                $db->setConnectionUTF8mb4Uni();
+                $this->dbx->setConnectionUTF8mb4Uni();
             }
 
             $sqlCheck = "SHOW TABLES LIKE '$table'";
-            $db->run($sqlCheck);
+            $this->dbx->run($sqlCheck);
 
-            file_put_contents($this->dumpFilePath, "\n" . $db->rows . '::' . $db->getError(), FILE_APPEND);
+            $this->checkIsValidQuery();
 
-            if ($db->rows > 0) {
+            if ($this->dbx->rows > 0) {
 
                 $sql_alter = '';
 
                 foreach ($desc['field'] as $field) {
 
                     $sqlCheck = "SHOW COLUMNS FROM `$table` LIKE '$field'";
-                    $db->run($sqlCheck);
+                    $this->dbx->run($sqlCheck);
 
-                    file_put_contents($this->dumpFilePath, "\n" . $db->rows . '::' . $db->getError(), FILE_APPEND);
+                    $this->checkIsValidQuery();
 
-                    if ($db->rows < 1) {
+                    if ($this->dbx->rows < 1) {
 
                         if (strstr($field, 'z_')) {
                             $sql_alter .= " ADD `$field` INT(10) UNSIGNED DEFAULT NULL,";
@@ -188,11 +192,11 @@ class Xml_Parser
                     $field = $fieldDef['name'];
 
                     $sqlCheck = "SHOW COLUMNS FROM `$table` LIKE '$field'";
-                    $db->run($sqlCheck);
+                    $this->dbx->run($sqlCheck);
 
-                    file_put_contents($this->dumpFilePath, "\n" . $db->rows . '::' . $db->getError(), FILE_APPEND);
+                    $this->checkIsValidQuery();
 
-                    if ($db->rows < 1) {
+                    if ($this->dbx->rows < 1) {
 
                         if (strtolower($field) == 'id' || strstr(strtolower($field), '_id')) {
                             $sql_alter .= " `$field` INT(10) UNSIGNED DEFAULT NULL,";
@@ -206,9 +210,9 @@ class Xml_Parser
                 if (!empty($sql_alter)) {
                     $sql_alter = rtrim($sql_alter, ',');
                     $sql = "ALTER TABLE `$table` " . $sql_alter . "";
-                    $db->run($sql);
+                    $this->dbx->run($sql);
 
-                    file_put_contents($this->dumpFilePath, "\n" . $db->getError(), FILE_APPEND);
+                    $this->checkIsValidQuery();
 
                 }
 
@@ -254,9 +258,9 @@ class Xml_Parser
 
                 $sql .= ") ENGINE=MYISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci"; //ENGINE=MYISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
 
-                $db->run($sql);
+                $this->dbx->run($sql);
 
-                file_put_contents($this->dumpFilePath, "\n" . $db->getError(), FILE_APPEND);
+                $this->checkIsValidQuery();
 
             }
         }
@@ -270,7 +274,7 @@ class Xml_Parser
      */
     public function addTableIndex($tableIndex = [])
     {
-        $db = Musqlidb::getInstance($this->connectionArray);
+        $this->dbx = Musqlidb::getInstance($this->connectionArray);
 
         foreach ($tableIndex as $tbl => $par) {
             $sql = "ALTER TABLE `" . $tbl . "` ";
@@ -280,9 +284,9 @@ class Xml_Parser
             }
             $sql = rtrim($sql, ',');
 
-            $db->run($sql);
+            $this->dbx->run($sql);
 
-            file_put_contents($this->dumpFilePath, "\n" . $db->getError(), FILE_APPEND);
+            $this->checkIsValidQuery();
 
         }
     }
@@ -538,44 +542,59 @@ class Xml_Parser
                 $saveTag["" . $key . ""] = $val;
             }
         }
-        $db = Musqlidb::getInstance($this->connectionArray);
+        $this->dbx = Musqlidb::getInstance($this->connectionArray);
 
         if (in_array($table, $this->utf8mb4Table)) { // force UTF8mb4
-            $db->setConnectionUTF8mb4Uni();
+            $this->dbx->setConnectionUTF8mb4Uni();
         }
 
-        $db->create($table, $saveTag);
+        $this->dbx->create($table, $saveTag);
 
-        //print "<br>".$db->currentQuery."<br>";
-        if ($db->isError()) {
+        //print "<br>".$this->dbx->currentQuery."<br>";
+        if ($this->dbx->isError()) {
 
-            file_put_contents($this->dumpFilePath, "\n" . $db->getError(), FILE_APPEND);
+            file_put_contents($this->dumpFilePath, "\n" . $this->dbx->getError(), FILE_APPEND);
 
-            if (strstr($db->error, 'Duplicate entry')) {
-// 	        $exp = explode('for key', $db->errorMessage);
+            if (strstr($this->dbx->error, 'Duplicate entry')) {
+// 	        $exp = explode('for key', $this->dbx->errorMessage);
 // 	        $uniqueField = trim(str_replace("'","", $exp[1]));
-                preg_match_all("/'([^']*?)'/", $db->error, $matched);
+                preg_match_all("/'([^']*?)'/", $this->dbx->error, $matched);
                 // print_r($matched);exit;
-                //print "<br>".$table."::".$db->errorMessage."<br>";
+                //print "<br>".$table."::".$this->dbx->errorMessage."<br>";
 
 
                 $unFieldValue = trim($matched[1][0]);
                 $unFieldName = trim($matched[1][1]);
                 unset($saveTag["$unFieldName"]);
-                $db->update($table, $saveTag, $unFieldValue, $unFieldName);
+                $this->dbx->update($table, $saveTag, $unFieldValue, $unFieldName);
 
-                if ($db->isError()) {
-                    file_put_contents($this->dumpFilePath, '\nDUPLICATE_ENTRY_ISSUE_TRY_UPDATE: ' . $table . '::' . $db->getError(), FILE_APPEND);
+                if ($this->dbx->isError()) {
+                    file_put_contents($this->dumpFilePath, '\nDUPLICATE_ENTRY_ISSUE_TRY_UPDATE: ' . $table . '::' . $this->dbx->getError(), FILE_APPEND);
                 } else {
-                    $db->run("SELECT z_PRIMARY_KEY FROM $table WHERE `$unFieldName` = '$unFieldValue' LIMIT 1");
-                    return $db->data['z_PRIMARY_KEY'];
+                    $this->dbx->run("SELECT z_PRIMARY_KEY FROM $table WHERE `$unFieldName` = '$unFieldValue' LIMIT 1");
+                    return $this->dbx->data['z_PRIMARY_KEY'];
                 }
 
             }
 
         }
 
-        return $db->getLastInsertID();
+        return $this->dbx->getLastInsertID();
+    }
+
+    /**
+     * @param Musqlidb $this ->dbx
+     * @param string $str
+     */
+    protected function checkIsValidQuery($str = '')
+    {
+        if (!empty($str)) {
+            file_put_contents($this->dumpFilePath, "\n" . $str, FILE_APPEND);
+        } elseif (!is_null($this->dbx)) {
+            if ($this->dbx->isError()) {
+                file_put_contents($this->dumpFilePath, "\n" . $this->dbx->getError(), FILE_APPEND);
+            }
+        }
     }
 
 }

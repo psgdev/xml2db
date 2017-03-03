@@ -4,8 +4,10 @@
  * DTD_Parser
  * parse DTD and prepare structure for tables and parsing xml file with XML_Parser
  *
+ * in this version: xml_root_element, verifyRootDataConnector() = root element as dataConnector if possible (type = 'root' but forced to act as dataConnector)
+ *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v1.0
+ * @version aa-v1.2
  */
 
 namespace PsgdevXml2db;
@@ -187,6 +189,8 @@ class DTD_Parser
 
         $this->checkForTable($this->rootElement);
         $this->dtdTable = array_unique($this->dtdTable);
+
+        $this->dbStructure['xml_root_element'] = $this->rootElement;
 
         $this->buildStructure($this->rootElement);
         $this->correctStructure();
@@ -608,7 +612,7 @@ class DTD_Parser
 
                                     if (!$this->checkIgnoredTable($node)) $this->dbStructure['tag_table'][$node] = $node;
 
-                                } elseif ($this->optimisation == true && ( $this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent) ) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
+                                } elseif ($this->optimisation == true && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent)) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
                                     //if (!isset($this->dbStructure['root_tag_table'][$parent]))
                                     if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $node;
 
@@ -689,7 +693,7 @@ class DTD_Parser
 
 
                         if ($this->structure[$node]['type'] != self::RELATION_TYPE_CONNECTOR && $this->structure[$node]['data_type'] != self::DATA_TYPE_MULTI_ROW
-                            && ( $this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent) )
+                            && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent))
                             && !isset($this->structure['multiParent'][$node])
                         ) {
 // tables set as fieldList and dataMixed or dataBlock
@@ -895,18 +899,19 @@ class DTD_Parser
     protected function verifyRootDataConnector($parent)
     {
 
-        if( !isset($this->structure[$parent]) ) return false;
+        if (!isset($this->structure[$parent])) return false;
         //print_r($this->structure[$parent]['relation'][0]);
         $pName = strtolower($parent);
 
-        if ( $this->structure[$parent]['type'] == self::RELATION_TYPE_ROOT && isset($this->structure[$parent]['relation'][0]) ) {
+        if ($this->structure[$parent]['type'] == self::RELATION_TYPE_ROOT && isset($this->structure[$parent]['relation'][0])) {
 
             $nName = strtolower($this->structure[$parent]['relation'][0]);
 
-            if( strstr($pName, $nName) && ( strlen($pName) - strlen($nName) <= 2) ) {
+            if (strstr($pName, $nName) && (strlen($pName) - strlen($nName) <= 2)) {
 
-                if( isset($this->dbStructure['root_tag_table'][$parent]) ) {
+                if (isset($this->dbStructure['root_tag_table'][$parent])) {
                     $this->dbStructure['root_tag_table'][$parent] = $this->structure[$parent]['relation'][0];
+
                 }
 
                 return true;

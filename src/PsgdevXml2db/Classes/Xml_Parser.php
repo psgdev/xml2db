@@ -4,8 +4,10 @@
  * Xml_Parser
  * parse xml using parsed dtd and load the data into database
  *
+ * in this version: xml_root_element, load() = changed to looop through root element used as dataConnector (type = 'root' but forced to act as dataConnector)
+ *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v1.0
+ * @version aa-v1.2
  */
 
 namespace PsgdevXml2db;
@@ -472,9 +474,9 @@ class Xml_Parser
                     }
                 } else {
 
-                    foreach ($xml->$table as $child) {
+                    if ($this->dtdStructure['xml_root_element'] == $table) {
 
-                        foreach ($child as $row) {
+                        foreach ($xml as $row) {
 
                             $saveTag = [];
 
@@ -497,15 +499,14 @@ class Xml_Parser
                                     $saveTag[$sField] = (string)$row->$parent->$tag;
                                 }
                             }
-//print_r($saveTag);
-//print $parentKey."::".$parentTable."::".$this->dtdStructure['table'][$table]['parent'][$parentTable];exit;
+
                             if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
 
                                 $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
                                 $saveTag[$keyName] = $parentKey;
                             }
 
-                            //print_r($saveTag);
+                            //print_r($saveTag);exit;
                             $insertKey = $this->insertTableRow($saveTag, $table);
 
                             $newTagTable = [];
@@ -518,8 +519,63 @@ class Xml_Parser
 
                                 $this->load($row, $newTagTable, $insertKey, $table);
                             }
+
+                        }
+
+
+                    } else {
+
+
+                        foreach ($xml->$table as $child) {
+
+                            foreach ($child as $row) {
+
+                                $saveTag = [];
+
+                                foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
+                                    $saveTag[$tag] = (string)$row->$tag;
+                                }
+
+                                if (isset($this->dtdStructure['table'][$table]['attlist'])) {
+
+                                    foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
+                                        $attName = $attlist['name'];
+                                        $saveTag[$attName] = (string)$row[0]->attributes()->$attName;
+                                    }
+                                }
+
+                                foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
+
+                                    foreach ($tagGroup as $tag) {
+                                        $sField = $parent . "_" . $tag;
+                                        $saveTag[$sField] = (string)$row->$parent->$tag;
+                                    }
+                                }
+//print_r($saveTag);
+//print $parentKey."::".$parentTable."::".$this->dtdStructure['table'][$table]['parent'][$parentTable];exit;
+                                if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
+
+                                    $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
+                                    $saveTag[$keyName] = $parentKey;
+                                }
+
+                                //print_r($saveTag);
+                                $insertKey = $this->insertTableRow($saveTag, $table);
+
+                                $newTagTable = [];
+
+                                if (isset($this->dtdStructure['table'][$table]['relatedTable']) && count($this->dtdStructure['table'][$table]['relatedTable']) > 0) {
+
+                                    foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
+                                        $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
+                                    }
+
+                                    $this->load($row, $newTagTable, $insertKey, $table);
+                                }
+                            }
                         }
                     }
+
                 }
             }
         }

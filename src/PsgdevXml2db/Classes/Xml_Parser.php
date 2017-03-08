@@ -151,6 +151,8 @@ class Xml_Parser
     public function createTable()
     {
 
+        $engine = empty($this->connectionArray['engine']) || is_null($this->connectionArray['engine']) ? '' : 'ENGINE=' . strtoupper($this->connectionArray['engine']);
+
         foreach ($this->dtdStructure['table'] as $table => $desc) {
 
             $this->dbx = Musqlidb::getInstance($this->connectionArray);
@@ -181,7 +183,11 @@ class Xml_Parser
                         } else {
 
                             if ($this->checkTextType($this->fieldTypeText, $field, $table)) {
-                                $sql_alter .= " ADD `$field` TEXT DEFAULT NULL,";
+                                if (strstr(strtolower($this->connectionArray['charset']), 'utf8') || in_array($table, $this->utf8mb4Table)) {
+                                    $sql_alter .= " ADD `$field` TEXT COLLATE utf8mb4_unicode_ci,";
+                                } else {
+                                    $sql_alter .= " ADD `$field` TEXT,";
+                                }
                             } else {
                                 $sql_alter .= " ADD `$field` VARCHAR(255) DEFAULT NULL,";
                             }
@@ -236,13 +242,19 @@ class Xml_Parser
 
                 foreach ($desc['field'] as $field) {
                     if (strstr($field, 'z_')) {
-                        $sql .= " `$field` INT(10) UNSIGNED NULL DEFAULT NULL,";
+                        $sql .= " `$field` INT(10) UNSIGNED DEFAULT NULL,";
                     } else {
 
                         if ($this->checkTextType($this->fieldTypeText, $field, $table)) {
-                            $sql .= " `$field` TEXT NULL DEFAULT NULL,";
+
+                            if (strstr(strtolower($this->connectionArray['charset']), 'utf8') || in_array($table, $this->utf8mb4Table)) {
+                                $sql .= " `$field` TEXT COLLATE utf8mb4_unicode_ci,";
+                            } else {
+                                $sql .= " `$field` TEXT,";
+                            }
+
                         } else {
-                            $sql .= " `$field` VARCHAR(255) NULL DEFAULT NULL,";
+                            $sql .= " `$field` VARCHAR(255) DEFAULT NULL,";
                         }
                     }
                 }
@@ -250,18 +262,22 @@ class Xml_Parser
                 foreach ($desc['attlist'] as $fieldDef) {
                     $field = $fieldDef['name'];
                     if (strtolower($field) == 'id' || strstr(strtolower($field), '_id')) {
-                        $sql .= " `$field` INT(10) UNSIGNED NULL DEFAULT NULL,";
+                        $sql .= " `$field` INT(10) UNSIGNED DEFAULT NULL,";
                     } else {
-                        $sql .= " `$field` VARCHAR(255) NULL DEFAULT NULL,";
+                        $sql .= " `$field` VARCHAR(255) DEFAULT NULL,";
                     }
                 }
 
                 $sql = rtrim($sql, ',');
 
-                $sql .= ") ENGINE=MYISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci"; //ENGINE=MYISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+                if (in_array($table, $this->utf8mb4Table)) {
+                    $sql .= ") $engine DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+                } else {
+                    $sql .= ") $engine DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci";
+                }
 
                 $this->dbx->run($sql);
-
+                //print $this->dbx->currentQuery;
                 $this->checkIsValidQuery();
 
             }

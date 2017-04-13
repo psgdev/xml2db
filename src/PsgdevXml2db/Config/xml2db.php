@@ -2,7 +2,7 @@
 
 return [
     'dumpFilePath' => storage_path('logs/xml2db'),
-    'parsedXmlDbNamePrefix' => 'demo_',
+    'parsedXmlDbNamePrefix' => env('PARSER_DB_NAME_PREFIX', 'demo_'),
     'databaseConnections' =>
         [
             'xml2db' => [

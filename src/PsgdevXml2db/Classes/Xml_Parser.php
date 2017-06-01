@@ -27,6 +27,7 @@ class Xml_Parser
      */
     public $systemTableFields = []; // like array(["xx_Created" => "datetime DEFAULT NULL", "xx_Modified" => "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "xx_Created_User" => "int(10) unsigned DEFAULT NULL", "xx_Modified_User" => "int(10) unsigned DEFAULT NULL"]
     public $systemTableFieldsDefaultValue = []; // like array(["xx_Created" => "[dbFunction]NOW()"], "xx_Created_User" => 1)
+    public $htmlEntEncode = false;
 
     /**
      * protected var
@@ -608,6 +609,14 @@ class Xml_Parser
     {
 
         //if(in_array($table, $this->ignoredTable)) return 0;
+
+        if($this->htmlEntEncode) {
+            foreach($saveTag as $key => $val) {
+                if(is_string($val)) {
+                    $saveTag["$key"] = html_entity_decode($val);
+                }
+            }
+        }
 
         if (count($this->systemTableFieldsDefaultValue) > 0) {
             foreach ($this->systemTableFieldsDefaultValue as $key => $val) {

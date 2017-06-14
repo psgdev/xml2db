@@ -36,7 +36,10 @@ class Xml_Parser
     protected $xmlPath;
     protected $dtdStructure;
     protected $fieldTypeText = []; // associative array table =>[keys]
+    protected $fieldTypeLongVarchar = [];
     protected $textField = false;
+    protected $longVarcharField = false;
+
     protected $createTableSQL = '';
     protected $connectionArray = [];
     protected $ignoredTable = []; // ignore tables - tables will not be filled, be carefully about relations between tables
@@ -81,7 +84,7 @@ class Xml_Parser
 //    public function setEnabledTable($tArray = []) {
 //	if (is_array($tArray))
 //	    $this->enabledTable = $tArray;
-//    }  
+//    }
 
 
     /**
@@ -106,6 +109,19 @@ class Xml_Parser
         $this->fieldTypeText = $assocArray;
         if (is_array($this->fieldTypeText) && !empty($this->fieldTypeText))
             $this->textField = true;
+    }
+
+
+    /**
+     * setLongVarcharField
+     *
+     * @param array $assocArray
+     */
+    public function setLongVarcharField($assocArray = [])
+    {
+        $this->fieldTypeLongVarchar = $assocArray;
+        if (is_array($this->fieldTypeLongVarchar) && !empty($this->fieldTypeLongVarchar))
+            $this->longVarcharField = true;
     }
 
     /**
@@ -136,6 +152,44 @@ class Xml_Parser
 
                     if (is_array($val)) {
                         return $this->checkTextType($typeArray[$key], $elemName);
+                    } else {
+                        return $elemName == $val;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * checkLongVarcharType
+     *
+     * @param array $typeArray
+     * @param string $elemName
+     * @param string $parentName
+     * @return boolean
+     */
+    protected function checkLongVarcharType($typeArray, $elemName = '', $parentName = '')
+    {
+
+        if ($this->longVarcharField == false) {
+            return false;
+        }
+
+        if (empty($parentName)) {
+
+            if (in_array($elemName, $typeArray)) {
+                return true;
+            }
+        } else {
+
+            foreach ($typeArray as $key => $val) {
+
+                if ($key == $parentName) {
+
+                    if (is_array($val)) {
+                        return $this->checkLongVarcharType($typeArray[$key], $elemName);
                     } else {
                         return $elemName == $val;
                     }
@@ -189,6 +243,8 @@ class Xml_Parser
                                 } else {
                                     $sql_alter .= " ADD `$field` TEXT,";
                                 }
+                            } elseif($this->checkLongVarcharType($this->fieldTypeLongVarchar, $field, $table)) {
+                                $sql_alter .= " ADD `$field` VARCHAR(500) DEFAULT NULL,";
                             } else {
                                 $sql_alter .= " ADD `$field` VARCHAR(255) DEFAULT NULL,";
                             }
@@ -254,6 +310,8 @@ class Xml_Parser
                                 $sql .= " `$field` TEXT,";
                             }
 
+                        } elseif($this->checkLongVarcharType($this->fieldTypeLongVarchar, $field, $table)) {
+                            $sql .= " `$field` VARCHAR(500) DEFAULT NULL,";
                         } else {
                             $sql .= " `$field` VARCHAR(255) DEFAULT NULL,";
                         }

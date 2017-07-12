@@ -1,6 +1,6 @@
 <?php
 
-namespace App;
+namespace PsgdevXml2db;
 
 use Config;
 use DB;

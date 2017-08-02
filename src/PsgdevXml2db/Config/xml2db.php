@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'dumpFilePath' => storage_path('logs/xml2db'),
+    'dumpFileDirPath' => storage_path('logs'),
     'parsedXmlDbNamePrefix' => env('PARSER_DB_NAME_PREFIX', 'demo_'),
     'databaseConnections' =>
         [

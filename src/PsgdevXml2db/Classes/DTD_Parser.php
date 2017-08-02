@@ -7,7 +7,7 @@
  * in this version: xml_root_element, verifyRootDataConnector() = root element as dataConnector if possible (type = 'root' but forced to act as dataConnector)
  *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v1.2
+ * @version aa-v2.0
  */
 
 namespace PsgdevXml2db;
@@ -31,6 +31,7 @@ class DTD_Parser
     const RELATION_TYPE_TABLE = 'table';
     const RELATION_TYPE_OPTION = 'option';
     const RELATION_TYPE_MERGE_NODE = 'mergeNode';
+    const RELATION_TYPE_FIELD_VALUE = 'value';
     const RELATION_TYPE_FIELD_LIST = 'fieldList';
     const RELATION_TYPE_CONNECTOR = 'dataConnector';
     const DATA_TYPE_BLOCK = 'dataBlock';
@@ -51,13 +52,15 @@ class DTD_Parser
     protected $dbStructure = [];
     protected $dtdTable = [];
     protected $multipleParent = [];
-    protected $tempMulti = [];
     protected $ignoredTable = []; //ignore tables - tables will not be filled, be carefull about relations between tables
-
+    protected $optimizedParentTable = []; // parents tables that had taken all properties of child
+    protected $removeOptimizedChildKey = []; // child tables that had gaved all properties to parent table and removed from structure, so they foreign keys needs to be removed from their child tables
+    protected $debugFilePath;
     /**
      * public var
      */
     public $optimisation = true;
+    public $tableDataType = [];
 
     /**
      * constructor
@@ -69,13 +72,16 @@ class DTD_Parser
     public function __construct($filePath)
     {
 
+        $this->debugFilePath = storage_path('logs/my_debug');
+        //file_put_contents($this->debugFilePath, '');
+
         $string = file_get_contents($filePath);
         //print htmlspecialchars($string);
 
         $exp = explode(">", $string);
 
         $this->lines = array_filter($exp, array($this, 'checkEmpty'));
-        //echo Parser_Helper::nicePrint(htmlspecialchars($this->lines[0]));
+        //Parser_Helper::nicePrint(htmlspecialchars($this->lines[0]));
     }
 
 
@@ -179,35 +185,42 @@ class DTD_Parser
                 }
 
                 $this->fields[$exp[1]]['name'] = $exp[1];
-                $this->fields[$exp[1]]['type'] = $this->checkSpecification($elementDeclaration);
-                $this->fields[$exp[1]]['spec'] = Parser_Helper::removeInvalidCharExceptRule(str_replace(" | ", ",", $elementDeclaration)); // don't care about possible options, you need all anyway
+                $this->fields[$exp[1]]['spec'] = Parser_Helper::removeInvalidCharExceptRule($elementDeclaration); // don't care about possible options, you need all anyway
                 $this->fields[$exp[1]]['desc'] = $elementDeclaration;
             }
+        }
+
+        // DEFINE ELEMENT TYPE
+        foreach ($this->fields as $key => $val) {
+            $this->fields[$key]['type'] = $this->checkSpecification($val['desc'], $key);
         }
 
         $this->rootElement = key($this->fields);
 
         $this->checkForTable($this->rootElement);
         $this->dtdTable = array_unique($this->dtdTable);
-
+        //Parser_Helper::nicePrint($this->dtdTable);
         $this->dbStructure['xml_root_element'] = $this->rootElement;
 
         $this->buildStructure($this->rootElement);
         $this->correctStructure();
 
-        //if(!$this->checkIgnored($this->rootElement)) {
         $this->prepareTableStructure($this->rootElement);
-        //echo Parser_Helper::nicePrint($this->dbStructure);
         $this->relationalTableStructure($this->rootElement);
-// 	} else {
-//
-// 			$this->prepareTableStructure($this->rootElement, '', self::RELATION_TYPE_ROOT);
-// 			$this->relationalTableStructure($this->rootElement, '', self::RELATION_TYPE_ROOT);
-// 	}
 
+        $this->correctDbStructure();
+
+        // OPTIMIZATION OF TABLES IF SET TO TRUE
+        if ($this->optimisation == true) {
+            $this->optimizeTables($this->rootElement);
+        }
+
+        // rebuild the tag_table = list of tables and tags for creation of tables and fields, and slq queries
         $this->correctTableStructure();
 
-        unset($this->dbStructure['unset_table']);
+        unset($this->dbStructure['unset_table']); // unset debug part of structure
+
+
     }
 
     /**
@@ -218,7 +231,7 @@ class DTD_Parser
      * @param string $elementDeclaration
      * @return mixed
      */
-    protected function checkSpecification($elementDeclaration)
+    protected function checkSpecification($elementDeclaration, $name)
     {
 
         if ($this->checkPossibleTableSpecification($elementDeclaration)) {
@@ -226,15 +239,14 @@ class DTD_Parser
             if (Parser_Helper::checkPossibleMultiOptionalValue($elementDeclaration)) {
                 return self::RELATION_TYPE_OPTION;
             }
-
-            if (!strstr($elementDeclaration, ',')) {
+            if (!strstr($elementDeclaration, ',') && (!isset($this->fields["$name"]['attlist']) || count($this->fields["$name"]['attlist']) == 0)) {
                 return self::RELATION_TYPE_CONNECTOR;
             }
 
-            return 'fieldList';
+            return self::RELATION_TYPE_FIELD_LIST;
         }
 
-        return 'value';
+        return self::RELATION_TYPE_FIELD_VALUE;
     }
 
     /**
@@ -257,6 +269,9 @@ class DTD_Parser
             $exp = explode(',', $this->fields[$node]['spec']);
             $exp = array_unique($exp);
 
+            if (count($exp) > 1) {
+                $this->dtdTable[] = $node;
+            }
 
             foreach ($exp as $e) {
 
@@ -264,13 +279,11 @@ class DTD_Parser
 
                 if (Parser_Helper::isMultiple($e)) {
                     //print $elem;
-                    if (!in_array($elem, $this->dtdTable))
-                        $this->dtdTable[] = $elem;
+                    $this->dtdTable[] = $elem;
                 }
 
-                //if($this->fields[$elem]['type'] != 'value') {
                 $this->checkForTable($elem, $node);
-                //}
+
             }
         }
     }
@@ -288,29 +301,31 @@ class DTD_Parser
 
         if (!empty($node)) {
 
-
             $this->structure[$node]['desc'] = $this->fields[$node]['desc'];
             $this->structure[$node]['spec'] = $this->fields[$node]['spec'];
 
+            if (!isset($this->structure[$node]['field'])) {
+                $this->structure[$node]['field'] = [];
+            }
+
+            if (!isset($this->structure[$node]['node'])) {
+                $this->structure[$node]['node'] = [];
+            }
+
+
             $this->structure[$node]['attlist'] = [];
+
             if (isset($this->fields[$node]['attlist'])) {
                 foreach ($this->fields[$node]['attlist'] as $val) {
-
                     $this->structure[$node]['attlist'][] = array('name' => $val['name'], 'type' => $val['type']);
                 }
             }
 
-            if (!empty($parent)) {
-                $this->tempMulti[$node][] = $parent;
-            }
 
             if ($node == $this->rootElement) {
 
                 if (!$this->checkIgnoredTable($node)) {
                     $this->dbStructure['root_tag_table'][$node] = $node;
-                    //$this->structure[$node]['type'] = $this->fields[$node]['type'];
-                } else {
-                    //$this->structure[$node]['type'] = self::RELATION_TYPE_ROOT;
                 }
 
                 $this->structure[$node]['type'] = self::RELATION_TYPE_ROOT;
@@ -321,12 +336,10 @@ class DTD_Parser
 
 
             if ($parent == $this->rootElement) {
-                $this->structure[$node]['parent'] = $this->checkIgnoredTable($parent) ? '' : $parent;
+                $this->structure[$node]['parent'][] = $this->checkIgnoredTable($parent) ? '' : $parent;
             } else {
-                $this->structure[$node]['parent'] = $parent;
+                $this->structure[$node]['parent'][] = $parent;
             }
-
-            $this->structure[$node]['data_type'] = self::DATA_TYPE_BLOCK;
 
 
             $exp = explode(',', $this->fields[$node]['spec']);
@@ -336,57 +349,53 @@ class DTD_Parser
 
                 $elem = Parser_Helper::removeInvalidChar($e);
 
-                if ($this->checkIfPossibleParent($elem)) {
+                if ($this->fields[$elem]['type'] != self::RELATION_TYPE_FIELD_VALUE) {
 
-                    if ($this->fields[$elem]['type'] != 'value') {
-                        //print $elem."::".$this->fields[$elem]['type'].'<br>';
-                        if (!$this->checkIgnored($elem, $node)) {
+                    if (!$this->checkIgnored($elem, $node)) {
+                        $this->structure[$elem]['many'] = Parser_Helper::isMultiple($e);
+                        $this->structure[$node]['relationType'][$elem] = $this->structure[$elem]['many'] ? self::RELATION_TYPE_TABLE : $this->setRelationType($elem, $node);
+                        $this->structure[$node]['relation'][] = $elem;
 
+                        if ($this->structure[$node]['relationType'][$elem] == self::RELATION_TYPE_TABLE) {
+                            $this->multipleParent[$elem][] = $node;
+                        }
+
+                        $this->buildStructure($elem, $node);
+
+                    }
+
+                } else {
+
+                    if (!$this->checkIgnored($elem, $node)) {
+
+                        if (!isset($this->structure[$elem]['many']) || !$this->structure[$elem]['many']) {
                             $this->structure[$elem]['many'] = Parser_Helper::isMultiple($e);
+                        }
+
+                        $this->structure[$elem]['field'][] = $elem;
+                        $this->structure[$elem]['type'] = $this->fields[$elem]['type'];
+                        $this->structure[$elem]['parent'][] = $node;
+
+                        if (!isset($this->structure[$elem]['attlist']) || !is_array($this->structure[$elem]['attlist'])) {
+                            $this->structure[$elem]['attlist'] = [];
+                            if (isset($this->fields[$elem]['attlist'])) {
+                                foreach ($this->fields[$elem]['attlist'] as $val) {
+                                    $this->structure[$elem]['attlist'][] = array('name' => $val['name'], 'type' => $val['type']);
+                                }
+                            }
+                        }
+
+                        if (!in_array($elem, $this->dtdTable)) {
+                            $this->structure[$node]['field'][] = $elem;
+                        } else {
 
                             $this->structure[$node]['relationType'][$elem] = $this->structure[$elem]['many'] ? self::RELATION_TYPE_TABLE : $this->setRelationType($elem, $node);
                             $this->structure[$node]['relation'][] = $elem;
-                            $this->structure[$node]['data_type'] = self::DATA_TYPE_MIXED;
-                            $this->buildStructure($elem, $node);
-                        }
 
-                    } else {
-
-                        if ($this->fields[$node]['type'] == self::RELATION_TYPE_CONNECTOR) {
-                            if (Parser_Helper::isMultiple($this->fields[$node]['spec'])) {
-                                $this->structure[$node]['data_type'] = self::DATA_TYPE_MULTI_ROW;
-
-                                if (!isset($this->structure[$node]['attlist']) || !is_array($this->structure[$node]['attlist'])) {
-                                    $this->structure[$node]['attlist'] = [];
-                                }
-                            }
-                        }
-
-
-                        if (!$this->checkIgnored($elem, $node)) {
-
-                            if (Parser_Helper::isMultiple($e)) {
-
-                                $this->structure[$elem]['many'] = true;
-                                $this->structure[$node]['relationType'][$elem] = self::RELATION_TYPE_TABLE;
-                                $this->structure[$node]['relation'][] = $elem;
-                                $this->structure[$node]['data_type'] = self::DATA_TYPE_MIXED;
-
+                            if ($this->structure[$node]['relationType'][$elem] == self::RELATION_TYPE_TABLE) {
                                 $this->multipleParent[$elem][] = $node;
-                            } else {
-
-                                if (!in_array($elem, $this->dtdTable)) {
-
-                                    $this->structure[$node]['field'][] = $elem;
-                                } else {
-                                    $this->structure[$elem]['many'] = false; // was true, jan2016
-                                    $this->structure[$node]['relationType'][$elem] = self::RELATION_TYPE_TABLE;
-                                    $this->structure[$node]['relation'][] = $elem;
-                                    $this->structure[$node]['data_type'] = self::DATA_TYPE_MIXED;
-
-                                    $this->multipleParent[$elem][] = $node;
-                                }
                             }
+
                         }
                     }
                 }
@@ -405,34 +414,65 @@ class DTD_Parser
 
         foreach ($this->structure as $key => $val) {
 
-            if (!isset($val['field']) && !isset($val['type'])) {
-                $this->structure[$key]['type'] = 'fieldList';
-                $this->structure[$key]['field'][] = $key;
-                $this->structure[$key]['data_type'] = self::DATA_TYPE_MULTI_ROW;
+            $this->structure["$key"]['field'] = array_unique($val['field']);
 
-                if (!isset($this->structure[$key]['attlist']) || !is_array($this->structure[$key]['attlist'])) {
-                    $this->structure[$key]['attlist'] = [];
-                }
-
+            if (!isset($this->structure["$key"]['parent'])) {
+                $this->structure["$key"]['parent'] = [];
+            } else {
+                $this->structure["$key"]['parent'] = array_unique($val['parent']);
             }
+
+            if (!isset($this->structure["$key"]['relation'])) {
+                $this->structure["$key"]['relation'] = [];
+            } else {
+                $this->structure["$key"]['relation'] = array_unique($val['relation']);
+            }
+
         }
+
+        $this->structure['multiParent'] = array();
 
         if (count($this->multipleParent) > 0) {
             $dedup = [];
             foreach ($this->multipleParent as $key => $val) {
                 $val = array_values(array_unique($val));
-                $dedup[$key] = $val;
+                $dedup["$key"] = $val;
+
+                if (count($dedup["$key"]) > 1) {
+                    $this->structure['multiParent']["$key"] = $dedup["$key"];
+                }
+
             }
-            $this->multipleParent = $dedup;
+
         }
 
-        $this->structure['multiParent'] = $this->multipleParent;
+    }
 
-        foreach ($this->tempMulti as $key => $val) {
 
-            if (count($val) > 1 && !isset($this->structure['multiParent'][$key])) {
-                $this->structure['multiParent'][$key] = $val;
+    /**
+     * correctStructure
+     *
+     * there are complex relations that need correction during building table structures and relational data
+     * elements with one child used mulitple times, or elements related to more than one element
+     */
+    protected function correctDbStructure()
+    {
+
+        foreach ($this->dbStructure['table'] as $key => $val) {
+
+            $this->dbStructure['table']["$key"]['field'] = array_unique($val['field']);
+            $this->dbStructure['table']["$key"]['node'] = array_unique($val['node']);
+
+            if (isset($val['parent']) && !is_array($val['parent'])) {
+                $this->dbStructure['table']["$key"]['parent'] = [];
             }
+
+            if (!isset($this->dbStructure['table']["$key"]['relatedTable'])) {
+                $this->dbStructure['table']["$key"]['relatedTable'] = [];
+            } else {
+                $this->dbStructure['table']["$key"]['relatedTable'] = array_unique($val['relatedTable']);
+            }
+
         }
 
     }
@@ -547,7 +587,7 @@ class DTD_Parser
      * @param string $parent
      * @param string $cond
      */
-    protected function prepareTableStructure($node, $parent = '', $cond = 'table')
+    protected function prepareTableStructure($node, $parent = '', $cond = '')
     {
 
         if (!empty($node)) {
@@ -573,12 +613,12 @@ class DTD_Parser
                         }
 
                         $this->dbStructure['table'][$node]['type'] = $this->structure[$node]['type'];
-                        $this->dbStructure['table'][$node]['data_type'] = $this->structure[$node]['data_type'];
                         $this->dbStructure['table'][$node]['field'] = $this->structure[$node]['field'];
                         $this->dbStructure['table'][$node]['node'] = $this->structure[$node]['field'];
                         $this->dbStructure['table'][$node]['attlist'] = $this->structure[$node]['attlist'];
+                        $this->dbStructure['table'][$node]['parent'] = [];
 
-                        //if (!isset($this->dbStructure['root_tag_table'][$node]))
+
                         if (!$this->checkIgnoredTable($node)) $this->dbStructure['tag_table'][$node] = $node;
 
                         if (isset($this->structure[$node]['relationType'])) {
@@ -590,38 +630,25 @@ class DTD_Parser
                             }
                         }
 
-                        if ($this->dbStructure['table'][$node]['data_type'] == self::DATA_TYPE_MULTI_ROW) {
 
-                            //if (!isset($this->dbStructure['root_tag_table'][$parent]))
-                            if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $parent;
+                        if (empty($parent)) {
 
-                        } elseif ($this->dbStructure['table'][$node]['data_type'] == self::DATA_TYPE_BLOCK) {
+                            if (!$this->checkIgnoredTable($node)) $this->dbStructure['tag_table'][$node] = $node;
 
-                            if ($this->optimisation == true && $this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR && $this->structure[$parent]['data_type'] == self::DATA_TYPE_MIXED && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
-                                // if (!isset($this->dbStructure['root_tag_table'][$parent]))
-                                if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $node;
-                            } else {
-                                //if (!isset($this->dbStructure['root_tag_table'][$parent]))
-                                if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $parent;
-                            }
-                        } else {
+                        } elseif ($this->optimisation == true && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent)) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
 
-                            if ($this->structure[$node]['type'] != self::RELATION_TYPE_CONNECTOR) {
-//print $node."::".$parent.'<br>';
-                                if (empty($parent)) {
+                            if (!$this->checkIgnoredTable($parent)) {
+                                $this->dbStructure['tag_table'][$parent] = $node;
 
-                                    if (!$this->checkIgnoredTable($node)) $this->dbStructure['tag_table'][$node] = $node;
-
-                                } elseif ($this->optimisation == true && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent)) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
-                                    //if (!isset($this->dbStructure['root_tag_table'][$parent]))
-                                    if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $node;
-
-                                } else {
-                                    //if (!isset($this->dbStructure['root_tag_table'][$parent]))
-                                    if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $parent;
-
+                                if( !isset($this->optimizedParentTable["$parent"]) ) {
+                                    $this->optimizedParentTable["$parent"] = $parent;
                                 }
                             }
+
+                        } else {
+
+                            if (!$this->checkIgnoredTable($parent)) $this->dbStructure['tag_table'][$parent] = $parent;
+
                         }
 
 
@@ -639,11 +666,9 @@ class DTD_Parser
                             $mergeNode[] = $val;
                         }
 
-                        //if(count($this->dbStructure['table'][$parent]['field']) > 0) {
                         if (count($mergeNode) > 0) {
                             $this->dbStructure['table'][$parent]["" . self::RELATION_TYPE_MERGE_NODE . ""][$node] = $mergeNode;
                         }
-                        //}
 
                         break;
 
@@ -674,9 +699,8 @@ class DTD_Parser
      * @param string $parent
      * @param string $cond
      */
-    protected function relationalTableStructure($node, $parent = '', $cond = 'table')
+    protected function relationalTableStructure($node, $parent = '', $cond = '', $parentType = self::RELATION_TYPE_FIELD_VALUE)
     {
-
 
         if (!empty($node)) {
 
@@ -685,222 +709,141 @@ class DTD_Parser
 
                 switch ($cond) {
 
-// 		case "root":
-//
-// 		    break;
-
                     case "table":
 
+                        if (isset($this->structure[$node]['parent']) && !empty($this->structure[$node]['parent'][0])) {
 
-                        if ($this->structure[$node]['type'] != self::RELATION_TYPE_CONNECTOR && $this->structure[$node]['data_type'] != self::DATA_TYPE_MULTI_ROW
-                            && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent))
-                            && !isset($this->structure['multiParent'][$node])
-                        ) {
-// tables set as fieldList and dataMixed or dataBlock
-//print $node.'::'.$parent.'<br>';
-                            if ($this->optimisation == true && !isset($this->fields[$parent]['attlist'])) {
+                            foreach ($this->structure[$node]['parent'] as $prt) {
 
-                                $this->dbStructure['table'][$parent] = $this->dbStructure['table'][$node];
-//print 'parent: '.$this->structure[$parent]['parent'].'<br>';
-                                if (!empty($this->structure[$parent]['parent'])) {
-                                    $connParent = $this->structure[$parent]['parent'];
+                                if ($parentType != self::RELATION_TYPE_CONNECTOR) {
 
-                                    $connParentParent = $this->structure[$connParent]['parent'];
-                                    $connParentTop = $this->structure[$connParentParent]['parent'];
-
-                                    if (empty($connParentParent) && empty($connParentTop)) {
-                                        $pkey = "z_" . $connParent . "_ID";
-                                        $this->pushToBeginning($pkey, $parent);
-                                        $this->dbStructure['table'][$parent]['parent']["" . $this->structure[$parent]['parent'] . ""] = $pkey;
-//print '<br>tree:'.$connParent.'::'.$connParentParent.'::'.$connParentTop.'|<br>';
-                                    } elseif ($this->structure[$connParentTop]['type'] == self::RELATION_TYPE_CONNECTOR) {
-                                        $pkey = "z_" . $this->structure[$connParentParent]['parent'] . "_ID";
-                                        $this->pushToBeginning($pkey, $parent);
-                                        $this->dbStructure['table'][$parent]['parent']["" . $this->structure[$connParentParent]['parent'] . ""] = $pkey;
+                                    $gpTblName = $this->getGrandParentDataConnectorTableName($prt);
+                                    //print "<br>GRANDPA: ".$node.':|:'.$prt.':=:'.$gpTblName.'<br>';
+                                    if (!empty($gpTblName)) {
+                                        $pkey = 'z_' . $gpTblName . '_ID';
+                                        $this->dbStructure['table'][$node]['parent']["$gpTblName"] = $pkey;
                                     } else {
-                                        $pkey = "z_" . $this->structure[$connParent]['parent'] . "_ID";
-                                        //print 'key: '.$pkey.'<br>';
-                                        $this->pushToBeginning($pkey, $parent);
-                                        $this->dbStructure['table'][$parent]['parent']["" . $this->structure[$connParent]['parent'] . ""] = $pkey;
+                                        $pkey = 'z_' . $parent . '_ID';
+                                        $this->dbStructure['table'][$node]['parent']["$parent"] = $pkey;
                                     }
+
+                                    $this->pushToBeginning($pkey, $node);
+
+
+                                } elseif ($this->optimisation == false) {
+
+                                    $pkey = 'z_' . $parent . '_ID';
+                                    $this->dbStructure['table'][$node]['parent']["$parent"] = $pkey;
+                                    $this->pushToBeginning($pkey, $node);
+
                                 }
 
-                                $this->dbStructure['unset_table']['table'][$node] = $this->dbStructure['table'][$node];
-                                $this->dbStructure['unset_table']['tag_table'][$node] = $this->dbStructure['tag_table'][$node];
-
-                                unset($this->dbStructure['table'][$node]);
-                                unset($this->dbStructure['tag_table'][$node]);
-                            } else {
-
-                                $connParent = $this->structure[$node]['parent'];
-
-                                $pkey = "z_" . $connParent . "_ID";
-                                $this->pushToBeginning($pkey, $node);
-                                $this->dbStructure['table'][$node]['parent']["" . $connParent . ""] = $pkey;
-
-                                if (!empty($this->structure[$parent]['parent'])) {
-//print "<p>UUU".$node."::".$parent."</p>";
-                                    $connParentParent = $this->structure[$parent]['parent'];
-
-                                    $pkey = "z_" . $connParentParent . "_ID";
-                                    $this->pushToBeginning($pkey, $parent);
-                                    $this->dbStructure['table'][$parent]['parent']["" . $connParentParent . ""] = $pkey;
-
-
-                                    if ($this->optimisation == true && !empty($this->structure[$connParentParent]['parent']) && $this->structure[$connParentParent]['type'] == self::RELATION_TYPE_CONNECTOR) {
-
-                                        $connParentTop = $this->structure[$connParentParent]['parent'];
-
-                                        if (isset($this->dbStructure['unset_table']['table']["" . $this->structure[$connParentParent]['parent'] . ""])) {
-
-                                            $connParentTop = $this->structure["" . $this->structure[$connParentParent]['parent'] . ""]['parent'];
-                                        }
-
-                                        $pkey = "z_" . $connParentTop . "_ID";
-                                        $this->pushToBeginning($pkey, $connParentParent);
-                                        $this->dbStructure['table'][$connParentParent]['parent']["" . $connParentTop . ""] = $pkey;
-                                    }
-                                }
-                            }
-                        } elseif ($this->structure[$node]['type'] != self::RELATION_TYPE_CONNECTOR && $this->structure[$node]['data_type'] != self::DATA_TYPE_MULTI_ROW && !empty($this->structure[$node]['parent'])) {
-
-
-                            $mParent = [];
-
-                            if (isset($this->structure['multiParent'][$node])) {
-                                $mParent = $this->structure['multiParent'][$node];
-                            } elseif (isset($this->structure[$node]['parent'])) {
-                                $mParent[] = $this->structure[$node]['parent'];
-                            }
-
-                            if (count($mParent) > 0) {
-
-                                foreach ($mParent as $connParent) {
-
-                                    if ($connParent == $parent) {
-
-                                        $connParentParent = $this->structure[$connParent]['parent'];
-
-                                        if ($this->optimisation == true && $this->structure[$connParentParent]['type'] == self::RELATION_TYPE_CONNECTOR) {
-                                            $pkey = "z_" . $connParentParent . "_ID";
-                                            $this->pushToBeginning($pkey, $node);
-                                            $this->dbStructure['table'][$node]['parent']["" . $connParentParent . ""] = $pkey;
-                                        } else {
-                                            $pkey = "z_" . $connParent . "_ID";
-                                            $this->pushToBeginning($pkey, $node);
-                                            $this->dbStructure['table'][$node]['parent']["" . $connParent . ""] = $pkey;
-                                        }
-                                    }
-                                }
-                            }
-                        } elseif ($this->structure[$node]['data_type'] == self::DATA_TYPE_MULTI_ROW) {
-
-                            $mParent = [];
-
-                            if (isset($this->structure['multiParent'][$node])) {
-                                $mParent = $this->structure['multiParent'][$node];
-                            } elseif (!empty($this->structure[$node]['parent'])) {
-                                $mParent[] = $this->structure[$node]['parent'];
-                            }
-
-                            if (count($mParent) > 0) {
-
-                                foreach ($mParent as $connParent) {
-
-                                    if ($connParent == $parent) {
-
-                                        if (isset($this->dbStructure['unset_table']['table'][$parent])) {
-
-                                            $connParentParent = $this->structure[$parent]['parent'];
-                                            $pkey = "z_" . $connParentParent . "_ID";
-                                            $this->pushToBeginning($pkey, $node);
-                                            $this->dbStructure['table'][$node]['parent']["" . $connParentParent . ""] = $pkey;
-                                        } else {
-
-                                            if ($this->optimisation == true && $this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR && count($mParent) == 1) {
-
-                                                $this->dbStructure['table'][$parent] = $this->dbStructure['table'][$node];
-
-                                                if (!empty($this->structure[$parent]['parent'])) {
-
-                                                    $connParent = $this->structure[$parent]['parent'];
-
-                                                    $connParentParent = $this->structure[$connParent]['parent'];
-                                                    $connParentTop = $this->structure[$connParentParent]['parent'];
-
-                                                    if ($this->structure[$connParentTop]['type'] == self::RELATION_TYPE_CONNECTOR) {
-                                                        $pkey = "z_" . $this->structure[$connParentParent]['parent'] . "_ID";
-                                                        $this->pushToBeginning($pkey, $parent);
-                                                        $this->dbStructure['table'][$parent]['parent']["" . $this->structure[$connParentParent]['parent'] . ""] = $pkey;
-                                                    } else {
-                                                        $pkey = "z_" . $this->structure[$connParent]['parent'] . "_ID";
-                                                        $this->pushToBeginning($pkey, $parent);
-                                                        $this->dbStructure['table'][$parent]['parent']["" . $this->structure[$connParent]['parent'] . ""] = $pkey;
-                                                    }
-                                                }
-
-
-                                                $this->dbStructure['unset_table']['table'][$node] = $this->dbStructure['table'][$node];
-                                                $this->dbStructure['unset_table']['tag_table'][$node] = $this->dbStructure['tag_table'][$node];
-
-                                                unset($this->dbStructure['table'][$node]);
-                                                unset($this->dbStructure['tag_table'][$node]);
-                                            } else {
-
-                                                $pkey = "z_" . $connParent . "_ID";
-                                                $this->pushToBeginning($pkey, $node);
-                                                $this->dbStructure['table'][$node]['parent']["" . $connParent . ""] = $pkey;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } elseif ($this->structure[$node]['type'] == self::RELATION_TYPE_CONNECTOR && !empty($this->structure[$node]['parent'])) {
-//print '4st:'.$node.'::'.$parent.'<br>';
-                            //print_r($this->dbStructure['tag_table']);
-                            $connParent = $this->structure[$node]['parent'];
-                            $connParentParent = $this->structure[$connParent]['parent'];
-                            $parentPossible = array_keys($this->dbStructure['tag_table'], $connParent);
-                            $parentPossibleDataConnnector = $parentPossible[0];
-
-                            if (!empty($connParentParent) && !empty($parentPossibleDataConnnector) && $this->structure[$connParentParent]['type'] == self::RELATION_TYPE_CONNECTOR && $connParent !== $parentPossibleDataConnnector) {
-                                //print "<p>$node$parentPossibleDataConnnector</p>";
-                                $pkey = "z_" . $parentPossibleDataConnnector . "_ID";
-                                $this->pushToBeginning($pkey, $node);
-                                $this->dbStructure['table'][$node]['parent']["" . $parentPossibleDataConnnector . ""] = $pkey;
-
-                            } else {
-                                $pkey = "z_" . $connParent . "_ID";
-                                $this->pushToBeginning($pkey, $node);
-                                $this->dbStructure['table'][$node]['parent']["" . $connParent . ""] = $pkey;
                             }
 
                         }
 
-
                         break;
                 }
+
+
             } else {
                 unset($this->dbStructure['table']["$node"]);
             }
 
             foreach ($this->structure[$node]['relation'] as $val) {
-                $this->relationalTableStructure($val, $node, $this->structure[$node]['relationType'][$val]);
+                $this->relationalTableStructure($val, $node, $this->structure[$node]['relationType'][$val], $this->structure[$node]['type']);
             }
         }
+    }
+
+
+    /**
+     * @param $node
+     * @param string $parent
+     * @param string $cond
+     * @param string $parentType
+     */
+    protected function optimizeTables($node, $parent = '', $cond = '', $parentType = self::RELATION_TYPE_FIELD_VALUE)
+    {
+
+        if (!$this->checkIgnoredTable($node)) {
+
+            switch ($cond) {
+
+                case "table":
+
+
+                    if ($parentType == self::RELATION_TYPE_CONNECTOR && in_array($parent, $this->optimizedParentTable) && $this->structure[$parent]['relation'][0] == $node) {
+
+                        $foundKey = array_search($parent, $this->optimizedParentTable, true);
+                        unset($this->optimizedParentTable["$foundKey"]);
+
+                        $parentFields = $this->dbStructure['table'][$parent]['field'];
+                        $parentParent = $this->dbStructure['table'][$parent]['parent'];
+
+                        $this->dbStructure['table'][$parent] = $this->dbStructure['table'][$node];
+
+                        $this->removeOptimizedChildKey[$node] = 'z_' . $node . '_ID';
+
+                        $this->dbStructure['table'][$parent]['field'] = array_merge($parentFields, $this->dbStructure['table'][$parent]['field']);
+                        $this->dbStructure['table'][$parent]['parent'] = $parentParent;
+
+                        $this->dbStructure['unset_table']['table'][$node] = $this->dbStructure['table'][$node];
+                        $this->dbStructure['unset_table']['tag_table'][$node] = $this->dbStructure['tag_table'][$node];
+
+                        $this->dbStructure['tag_table'][$parent] = $node;
+
+                        unset($this->dbStructure['table'][$node]);
+                        unset($this->dbStructure['tag_table'][$node]);
+
+                    }
+
+                    break;
+            }
+        }
+
+        foreach ($this->structure[$node]['relation'] as $val) {
+            $this->optimizeTables($val, $node, $this->structure[$node]['relationType'][$val], $this->structure[$node]['type']);
+        }
+    }
+
+
+    /**
+     * @param string $parent
+     * @return boolean
+     */
+    protected function getGrandParentDataConnectorTableName($parent)
+    {
+
+        if ($this->optimisation == false) return '';
+
+        if (isset($this->structure[$parent]['parent'])
+            && !empty($this->structure[$parent]['parent'][0])
+            && count($this->structure[$parent]['parent'] == 1)
+        ) {
+
+            $ptName = $this->structure[$parent]['parent'][0];
+
+            if ($this->fields["$ptName"]['type'] == self::RELATION_TYPE_CONNECTOR) {
+                return $ptName;
+            }
+
+        }
+
+        return '';
     }
 
     /**
      * verify data type root to use as dataConnector
      *
      * @param string $parent
-     * @return string
+     * @return boolean
      */
     protected function verifyRootDataConnector($parent)
     {
 
         if (!isset($this->structure[$parent])) return false;
-        //print_r($this->structure[$parent]['relation'][0]);
+
         $pName = strtolower($parent);
 
         if ($this->structure[$parent]['type'] == self::RELATION_TYPE_ROOT && isset($this->structure[$parent]['relation'][0])) {
@@ -930,13 +873,30 @@ class DTD_Parser
     protected function correctTableStructure()
     {
 
+        $removeTable = array_keys($this->removeOptimizedChildKey);
+
         foreach ($this->dbStructure['table'] as $key => $val) {
 
             foreach ($val as $id => $par) {
 
-                if ($id == 'field' || $id == 'node') {
+                if ($id == 'field' || $id == 'node' || $id == 'relatedTable') {
 
                     $this->dbStructure['table'][$key][$id] = array_unique($par);
+
+                    if ($id == 'field') {
+                        foreach ($par as $fld) {
+                            if (in_array($fld, $this->removeOptimizedChildKey, true)) {
+                                $foundKey = array_search('z_IMAGE_ID', $this->dbStructure['table']["$key"]["field"], true);
+                                unset($this->dbStructure['table']["$key"]["field"]["$foundKey"]);
+                            }
+                        }
+                    }
+
+                } elseif ($id == 'parent') {
+
+                    foreach ($removeTable as $tbl) {
+                        unset($this->dbStructure['table']["$key"]["parent"]["$tbl"]);
+                    }
                 }
             }
         }
@@ -961,6 +921,7 @@ class DTD_Parser
 
             $this->dbStructure['table'][$node]['field'][] = $elem;
         }
+
     }
 
     /**

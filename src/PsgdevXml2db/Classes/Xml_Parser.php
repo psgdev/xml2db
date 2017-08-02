@@ -7,12 +7,11 @@
  * in this version: xml_root_element, load() = changed to looop through root element used as dataConnector (type = 'root' but forced to act as dataConnector)
  *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v1.2
+ * @version aa-v2.0
  */
 
 namespace PsgdevXml2db;
 
-use PsgdevXml2db\DTD_Parser;
 use PsgdevMusqlidb\Musqlidb;
 
 class Xml_Parser
@@ -45,7 +44,7 @@ class Xml_Parser
     protected $ignoredTable = []; // ignore tables - tables will not be filled, be carefully about relations between tables
     protected $utf8mb4Table = []; // utf8mb4 tables needs to be handled properly
     //protected $enabledTable = []; //do this tables
-    protected $dumpFilePath; // file path for logging
+    protected $dumpFileDirPath; // dir path for logging
 
     /**
      *
@@ -60,9 +59,9 @@ class Xml_Parser
         $this->dtdStructure = $dtdRelationalStructure;
         $this->connectionArray = config('xml2db.databaseConnections.xml2db');
         $this->connectionArray['database'] = $database;
-        $this->dumpFilePath = config('xml2db.dumpFilePath');
+        $this->dumpFileDirPath = config('xml2db.dumpFileDirPath') . '/db_' . $database;
 
-        ///file_put_contents($this->dumpFilePath, '');
+        file_put_contents($this->dumpFileDirPath, '');
     }
 
     /**
@@ -216,7 +215,11 @@ class Xml_Parser
             }
 
             $sqlCheck = "SHOW TABLES LIKE '$table'";
-            $this->dbx->run($sqlCheck);
+            try {
+                $this->dbx->run($sqlCheck);
+            } catch (\Exception $ex) {
+                print $ex->getMessage();
+            }
 
             $this->checkIsValidQuery();
 
@@ -227,7 +230,11 @@ class Xml_Parser
                 foreach ($desc['field'] as $field) {
 
                     $sqlCheck = "SHOW COLUMNS FROM `$table` LIKE '$field'";
-                    $this->dbx->run($sqlCheck);
+                    try {
+                        $this->dbx->run($sqlCheck);
+                    } catch (\Exception $ex) {
+                        print $ex->getMessage();
+                    }
 
                     $this->checkIsValidQuery();
 
@@ -243,8 +250,8 @@ class Xml_Parser
                                 } else {
                                     $sql_alter .= " ADD `$field` TEXT,";
                                 }
-                            } elseif($this->checkLongVarcharType($this->fieldTypeLongVarchar, $field, $table)) {
-                                $sql_alter .= " ADD `$field` VARCHAR(500) DEFAULT NULL,";
+                            } elseif ($this->checkLongVarcharType($this->fieldTypeLongVarchar, $field, $table)) {
+                                $sql_alter .= " ADD `$field` VARCHAR(1000) DEFAULT NULL,";
                             } else {
                                 $sql_alter .= " ADD `$field` VARCHAR(255) DEFAULT NULL,";
                             }
@@ -257,7 +264,11 @@ class Xml_Parser
                     $field = $fieldDef['name'];
 
                     $sqlCheck = "SHOW COLUMNS FROM `$table` LIKE '$field'";
-                    $this->dbx->run($sqlCheck);
+                    try {
+                        $this->dbx->run($sqlCheck);
+                    } catch (\Exception $ex) {
+                        print $ex->getMessage();
+                    }
 
                     $this->checkIsValidQuery();
 
@@ -275,7 +286,13 @@ class Xml_Parser
                 if (!empty($sql_alter)) {
                     $sql_alter = rtrim($sql_alter, ',');
                     $sql = "ALTER TABLE `$table` " . $sql_alter . "";
-                    $this->dbx->run($sql);
+
+                    //print $table.': '.$sql.'<br>';
+                    try {
+                        $this->dbx->run($sql);
+                    } catch (\Exception $ex) {
+                        print $ex->getMessage();
+                    }
 
                     $this->checkIsValidQuery();
 
@@ -310,8 +327,8 @@ class Xml_Parser
                                 $sql .= " `$field` TEXT,";
                             }
 
-                        } elseif($this->checkLongVarcharType($this->fieldTypeLongVarchar, $field, $table)) {
-                            $sql .= " `$field` VARCHAR(500) DEFAULT NULL,";
+                        } elseif ($this->checkLongVarcharType($this->fieldTypeLongVarchar, $field, $table)) {
+                            $sql .= " `$field` VARCHAR(1000) DEFAULT NULL,";
                         } else {
                             $sql .= " `$field` VARCHAR(255) DEFAULT NULL,";
                         }
@@ -320,7 +337,8 @@ class Xml_Parser
 
                 foreach ($desc['attlist'] as $fieldDef) {
                     $field = $fieldDef['name'];
-                    if (strtolower($field) == 'id' || strstr(strtolower($field), '_id')) {
+                    // csid is added to simplify needs for integer type for this field - this is an exception in common procedure
+                    if (strtolower($field) == 'id' || strtolower($field) == 'csid' || strstr(strtolower($field), '_id')) {
                         $sql .= " `$field` INT(10) UNSIGNED DEFAULT NULL,";
                     } else {
                         $sql .= " `$field` VARCHAR(255) DEFAULT NULL,";
@@ -335,7 +353,11 @@ class Xml_Parser
                     $sql .= ") $engine DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci";
                 }
 
-                $this->dbx->run($sql);
+                try {
+                    $this->dbx->run($sql);
+                } catch (\Exception $ex) {
+                    print $ex->getMessage();
+                }
                 //print $this->dbx->currentQuery;
                 $this->checkIsValidQuery();
 
@@ -361,7 +383,11 @@ class Xml_Parser
             }
             $sql = rtrim($sql, ',');
 
-            $this->dbx->run($sql);
+            try {
+                $this->dbx->run($sql);
+            } catch (\Exception $ex) {
+                print $ex->getMessage();
+            }
 
             $this->checkIsValidQuery();
 
@@ -397,161 +423,70 @@ class Xml_Parser
 
                 if ($table == $xmlTag) {
 
-                    if ($this->dtdStructure['table'][$table]['data_type'] == DTD_Parser::DATA_TYPE_MULTI_ROW) {
+                    //file_put_contents($this->dumpFileDirPath, 'EQ_TABLE: '.$table.':'.$parentTable."\n", FILE_APPEND);
 
+                    foreach ($xml->$table as $row) {
 
-                        $uniqueNode = $this->dtdStructure['table'][$table]['node'][0];
+                        $saveTag = [];
 
-                        if (count($this->dtdStructure['table'][$table]['node']) == 1 && isset($xml->$uniqueNode)) {
+                        file_put_contents($this->dumpFileDirPath, "\n" . $table . ' PK: ' . $table, FILE_APPEND);
+                        file_put_contents($this->dumpFileDirPath, "\n" . @implode(',', $this->dtdStructure['table'][$table]['node']), FILE_APPEND);
+                        if (!empty($parentTable)) {
+                            file_put_contents($this->dumpFileDirPath, "\n" . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable], FILE_APPEND);
 
-                            $saveTag = [];
-                            $saveTag[$uniqueNode] = (string)$xml->$uniqueNode;
+                        }
 
-                            if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
+                        foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
+                            $saveTag[$tag] = (string)$row->$tag;
+                        }
 
-                                $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
-                                $saveTag[$keyName] = $parentKey;
-                            }
+                        if (isset($this->dtdStructure['table'][$table]['attlist'])) {
 
-
-                            $this->insertTableRow($saveTag, $table);
-                        } else {
-
-                            foreach ($xml->$table as $row) {
-
-                                foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
-                                    //print "<br>{$table}-{$tag} ".$row->$tag."<br>";
-
-                                    foreach ($row->$tag as $val) {
-
-                                        $saveTag = [];
-
-                                        $saveTag[$tag] = (string)$val;
-
-                                        if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
-
-                                            $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
-                                            $saveTag[$keyName] = $parentKey;
-                                        }
-
-
-                                        $this->insertTableRow($saveTag, $table);
-                                    }
-                                }
+                            foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
+                                $attName = $attlist['name'];
+                                $saveTag[$attName] = (string)$row[0]->attributes()->$attName;
                             }
                         }
-                    }
 
+                        foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
 
-                    if ($this->dtdStructure['table'][$table]['data_type'] == DTD_Parser::DATA_TYPE_BLOCK || $this->dtdStructure['table'][$table]['data_type'] == DTD_Parser::DATA_TYPE_MIXED) {
-
-//print $table."::".$this->dtdStructure['table'][$table]['type'];
-                        switch ($this->dtdStructure['table'][$table]['type']) {
-
-                            case "root":
-
-                                foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
-                                    $saveTag[$tag] = (string)$xml->$tag;
-                                }
-
-
-                                if (isset($this->dtdStructure['table'][$table]['attlist'])) {
-
-                                    foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
-                                        $attName = $attlist['name'];
-                                        $saveTag[$attName] = (string)$xml[0]->attributes()->$attName;
-                                    }
-                                }
-
-                                foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
-
-                                    foreach ($tagGroup as $tag) {
-                                        $sField = $parent . "_" . $tag;
-                                        $saveTag[$sField] = (string)$xml->$parent->$tag;
-                                        //print "<br>{$table}-{$tag} ".$row->$parent->$tag."<br>";
-                                    }
-                                }
-
-                                $insertKey = $this->insertTableRow($saveTag, $table);
-
-                                if ($this->dtdStructure['table'][$table]['data_type'] == DTD_Parser::DATA_TYPE_MIXED) {
-
-                                    $newTagTable = [];
-
-                                    if (isset($this->dtdStructure['table'][$table]['relatedTable'])) {
-
-                                        foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                            $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
-                                        }
-
-                                        $this->load($xml, $newTagTable, $insertKey, $table);
-                                    }
-                                }
-
-                                break;
-
-                            default:
-
-//print $table.'<br>';
-//print_r($xml->AC_DATA);
-                                foreach ($xml->$table as $row) {
-
-                                    $saveTag = [];
-
-                                    foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
-                                        $saveTag[$tag] = (string)$row->$tag;
-                                    }
-
-                                    if (isset($this->dtdStructure['table'][$table]['attlist'])) {
-
-                                        foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
-                                            $attName = $attlist['name'];
-                                            $saveTag[$attName] = (string)$row[0]->attributes()->$attName;
-                                        }
-                                    }
-
-                                    foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
-
-                                        foreach ($tagGroup as $tag) {
-                                            $sField = $parent . "_" . $tag;
-                                            $saveTag[$sField] = (string)$row->$parent->$tag;
-                                            //print "<br>{$table}-{$tag} ".$row->$parent->$tag."<br>";
-                                        }
-                                    }
-
-
-                                    if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
-
-                                        $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
-                                        $saveTag[$keyName] = $parentKey;
-                                    }
-
-
-                                    $insertKey = $this->insertTableRow($saveTag, $table);
-
-                                    if ($this->dtdStructure['table'][$table]['data_type'] == DTD_Parser::DATA_TYPE_MIXED) {
-
-                                        $newTagTable = [];
-
-                                        if (isset($this->dtdStructure['table'][$table]['relatedTable'])) {
-
-                                            foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                                $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
-                                            }
-
-                                            $this->load($row, $newTagTable, $insertKey, $table);
-                                        }
-                                    }
-                                }
-
-                                break;
+                            foreach ($tagGroup as $tag) {
+                                $sField = $parent . "_" . $tag;
+                                $saveTag[$sField] = (string)$row->$parent->$tag;
+                                //print "<br>{$table}-{$tag} ".$row->$parent->$tag."<br>";
+                            }
                         }
+
+
+                        if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
+
+                            $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
+                            $saveTag[$keyName] = $parentKey;
+                        }
+
+
+                        $insertKey = $this->insertTableRow($saveTag, $table);
+
+                        $newTagTable = [];
+
+                        if (isset($this->dtdStructure['table'][$table]['relatedTable'])) {
+
+                            foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
+                                $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
+                            }
+
+                            $this->load($row, $newTagTable, $insertKey, $table);
+                        }
+
                     }
+
                 } else {
 
-                    if ($this->dtdStructure['xml_root_element'] == $table) {
+                    //file_put_contents($this->dumpFileDirPath, 'TABLE: '.$table.':'.$parentTable."\n", FILE_APPEND);
 
-                        foreach ($xml as $row) {
+                    foreach ($xml->$table as $child) {
+
+                        foreach ($child as $row) {
 
                             $saveTag = [];
 
@@ -581,7 +516,7 @@ class Xml_Parser
                                 $saveTag[$keyName] = $parentKey;
                             }
 
-                            //print_r($saveTag);exit;
+                            //print_r($saveTag);
                             $insertKey = $this->insertTableRow($saveTag, $table);
 
                             $newTagTable = [];
@@ -593,60 +528,6 @@ class Xml_Parser
                                 }
 
                                 $this->load($row, $newTagTable, $insertKey, $table);
-                            }
-
-                        }
-
-
-                    } else {
-
-
-                        foreach ($xml->$table as $child) {
-
-                            foreach ($child as $row) {
-
-                                $saveTag = [];
-
-                                foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
-                                    $saveTag[$tag] = (string)$row->$tag;
-                                }
-
-                                if (isset($this->dtdStructure['table'][$table]['attlist'])) {
-
-                                    foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
-                                        $attName = $attlist['name'];
-                                        $saveTag[$attName] = (string)$row[0]->attributes()->$attName;
-                                    }
-                                }
-
-                                foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
-
-                                    foreach ($tagGroup as $tag) {
-                                        $sField = $parent . "_" . $tag;
-                                        $saveTag[$sField] = (string)$row->$parent->$tag;
-                                    }
-                                }
-//print_r($saveTag);
-//print $parentKey."::".$parentTable."::".$this->dtdStructure['table'][$table]['parent'][$parentTable];exit;
-                                if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
-
-                                    $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
-                                    $saveTag[$keyName] = $parentKey;
-                                }
-
-                                //print_r($saveTag);
-                                $insertKey = $this->insertTableRow($saveTag, $table);
-
-                                $newTagTable = [];
-
-                                if (isset($this->dtdStructure['table'][$table]['relatedTable']) && count($this->dtdStructure['table'][$table]['relatedTable']) > 0) {
-
-                                    foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                        $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
-                                    }
-
-                                    $this->load($row, $newTagTable, $insertKey, $table);
-                                }
                             }
                         }
                     }
@@ -666,11 +547,9 @@ class Xml_Parser
     protected function insertTableRow($saveTag, $table = '')
     {
 
-        //if(in_array($table, $this->ignoredTable)) return 0;
-
-        if($this->htmlEntEncode) {
-            foreach($saveTag as $key => $val) {
-                if(is_string($val)) {
+        if ($this->htmlEntEncode) {
+            foreach ($saveTag as $key => $val) {
+                if (is_string($val)) {
                     $saveTag["$key"] = html_entity_decode($val);
                 }
             }
@@ -692,15 +571,11 @@ class Xml_Parser
         //print "<br>".$this->dbx->currentQuery."<br>";
         if ($this->dbx->isError()) {
 
-            file_put_contents($this->dumpFilePath, "\n" . $this->dbx->getError(), FILE_APPEND);
+            file_put_contents($this->dumpFileDirPath, "\n" . $this->dbx->getError(), FILE_APPEND);
 
             if (strstr($this->dbx->error, 'Duplicate entry')) {
-// 	        $exp = explode('for key', $this->dbx->errorMessage);
-// 	        $uniqueField = trim(str_replace("'","", $exp[1]));
-                preg_match_all("/'([^']*?)'/", $this->dbx->error, $matched);
-                // print_r($matched);exit;
-                //print "<br>".$table."::".$this->dbx->errorMessage."<br>";
 
+                preg_match_all("/'([^']*?)'/", $this->dbx->error, $matched);
 
                 $unFieldValue = trim($matched[1][0]);
                 $unFieldName = trim($matched[1][1]);
@@ -708,7 +583,7 @@ class Xml_Parser
                 $this->dbx->update($table, $saveTag, $unFieldValue, $unFieldName);
 
                 if ($this->dbx->isError()) {
-                    file_put_contents($this->dumpFilePath, '\nDUPLICATE_ENTRY_ISSUE_TRY_UPDATE: ' . $table . '::' . $this->dbx->getError(), FILE_APPEND);
+                    file_put_contents($this->dumpFileDirPath, '\nDUPLICATE_ENTRY_ISSUE_TRY_UPDATE: ' . $table . '::' . $this->dbx->getError(), FILE_APPEND);
                 } else {
                     $this->dbx->run("SELECT z_PRIMARY_KEY FROM $table WHERE `$unFieldName` = '$unFieldValue' LIMIT 1");
                     return $this->dbx->data['z_PRIMARY_KEY'];
@@ -728,10 +603,10 @@ class Xml_Parser
     protected function checkIsValidQuery($str = '')
     {
         if (!empty($str)) {
-            file_put_contents($this->dumpFilePath, "\n" . $str, FILE_APPEND);
+            file_put_contents($this->dumpFileDirPath, "\n" . $str, FILE_APPEND);
         } elseif (!is_null($this->dbx)) {
             if ($this->dbx->isError()) {
-                file_put_contents($this->dumpFilePath, "\n" . $this->dbx->getError(), FILE_APPEND);
+                file_put_contents($this->dumpFileDirPath, "\n" . $this->dbx->getError(), FILE_APPEND);
             }
         }
     }

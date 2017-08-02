@@ -5,7 +5,7 @@
  * helper for parsers
  *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v1.0
+ * @version aa-v2.0
  */
 
 namespace PsgdevXml2db;
@@ -33,6 +33,17 @@ class Parser_Helper
     {
         echo htmlspecialchars($string);
     }
+
+    /**
+     * nicePrintObject
+     *
+     * @param string $obj
+     */
+    public static function nicePrintObject($obj = '')
+    {
+        echo '<pre>' . var_export($obj, 1) . '</pre>';
+    }
+
 
 
     /**
@@ -118,8 +129,8 @@ class Parser_Helper
      */
     public static function removeInvalidCharExceptRule($string)
     {
-
-        $string = str_replace('|', ',', $string);
+        $string = preg_replace('/\s+/', '', $string);
+        $string = str_replace('|', ',', $string); // don't care about possible options, you need all anyway
         return preg_replace("/[^A-Za-z0-9_\-\,\*\?\+]/", '', $string);
     }
 
@@ -167,10 +178,10 @@ class Parser_Helper
      */
     public static function checkPossibleMultiOptionalValue($string)
     {
-        $ff = array("(", ")"); //array("<!",">");
-        $rr = "";
-        $string = trim(str_replace($ff, $rr, $string));
-
+//        $ff = array("(", ")"); //array("<!",">");
+//        $rr = "";
+//        $string = trim(str_replace($ff, $rr, $string));
+//
         if (!strstr($string, ',') && strstr($string, '|'))
             return true;
 

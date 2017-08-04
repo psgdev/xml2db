@@ -12,6 +12,7 @@
 
 namespace PsgdevXml2db;
 
+use PsgdevXml2db\DTD_Parser;
 use PsgdevMusqlidb\Musqlidb;
 
 class Xml_Parser
@@ -43,7 +44,6 @@ class Xml_Parser
     protected $connectionArray = [];
     protected $ignoredTable = []; // ignore tables - tables will not be filled, be carefully about relations between tables
     protected $utf8mb4Table = []; // utf8mb4 tables needs to be handled properly
-    //protected $enabledTable = []; //do this tables
     protected $dumpFileDirPath; // dir path for logging
 
     /**
@@ -61,7 +61,6 @@ class Xml_Parser
         $this->connectionArray['database'] = $database;
         $this->dumpFileDirPath = config('xml2db.dumpFileDirPath') . '/db_' . $database;
 
-        file_put_contents($this->dumpFileDirPath, '');
     }
 
     /**
@@ -74,16 +73,6 @@ class Xml_Parser
         if (is_array($tArray))
             $this->ignoredTable = $tArray;
     }
-
-    /**
-     * setEnabledTable
-     *
-     * @param array $tArray
-     */
-//    public function setEnabledTable($tArray = []) {
-//	if (is_array($tArray))
-//	    $this->enabledTable = $tArray;
-//    }
 
 
     /**
@@ -423,18 +412,16 @@ class Xml_Parser
 
                 if ($table == $xmlTag) {
 
-                    //file_put_contents($this->dumpFileDirPath, 'EQ_TABLE: '.$table.':'.$parentTable."\n", FILE_APPEND);
+                    file_put_contents($this->dumpFileDirPath, "\n" . 'CASE_1: '.$table . ' PK: ' . $parentTable.'::'.$parentKey, FILE_APPEND);
+                    file_put_contents($this->dumpFileDirPath, "\n" . $table .' FIELDS: '. @implode(',', $this->dtdStructure['table'][$table]['node']), FILE_APPEND);
+
+                    if (!empty($parentTable)) {
+                        file_put_contents($this->dumpFileDirPath, "\n" . $table . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable], FILE_APPEND);
+                    }
 
                     foreach ($xml->$table as $row) {
 
                         $saveTag = [];
-
-                        file_put_contents($this->dumpFileDirPath, "\n" . $table . ' PK: ' . $table, FILE_APPEND);
-                        file_put_contents($this->dumpFileDirPath, "\n" . @implode(',', $this->dtdStructure['table'][$table]['node']), FILE_APPEND);
-                        if (!empty($parentTable)) {
-                            file_put_contents($this->dumpFileDirPath, "\n" . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable], FILE_APPEND);
-
-                        }
 
                         foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
                             $saveTag[$tag] = (string)$row->$tag;
@@ -453,7 +440,6 @@ class Xml_Parser
                             foreach ($tagGroup as $tag) {
                                 $sField = $parent . "_" . $tag;
                                 $saveTag[$sField] = (string)$row->$parent->$tag;
-                                //print "<br>{$table}-{$tag} ".$row->$parent->$tag."<br>";
                             }
                         }
 
@@ -464,6 +450,7 @@ class Xml_Parser
                             $saveTag[$keyName] = $parentKey;
                         }
 
+                        file_put_contents($this->dumpFileDirPath, "\n" . $table . ' INSERT: ' . $saveTag,FILE_APPEND);
 
                         $insertKey = $this->insertTableRow($saveTag, $table);
 
@@ -474,7 +461,7 @@ class Xml_Parser
                             foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
                                 $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
                             }
-
+                            file_put_contents($this->dumpFileDirPath, "\n" . $table . ' NEWTAGTABLE: ' . @implode(',', $newTagTable), FILE_APPEND);
                             $this->load($row, $newTagTable, $insertKey, $table);
                         }
 
@@ -482,33 +469,31 @@ class Xml_Parser
 
                 } else {
 
-                    //file_put_contents($this->dumpFileDirPath, 'TABLE: '.$table.':'.$parentTable."\n", FILE_APPEND);
+                    file_put_contents($this->dumpFileDirPath, "\n" . 'CASE_2: '.$table . ' PK: ' . $parentTable.'::'.$parentKey, FILE_APPEND);
+                    file_put_contents($this->dumpFileDirPath, "\n" . $table .' FIELDS: '. @implode(',', $this->dtdStructure['table'][$table]['node']), FILE_APPEND);
+
+                    if (!empty($parentTable)) {
+                        file_put_contents($this->dumpFileDirPath, "\n" . $table . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable], FILE_APPEND);
+                    }
 
                     foreach ($xml->$table as $child) {
 
-                        foreach ($child as $row) {
+                        if($this->dtdStructure['table'][$table]['type'] == DTD_Parser::RELATION_TYPE_FIELD_VALUE) {
 
                             $saveTag = [];
 
                             foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
-                                $saveTag[$tag] = (string)$row->$tag;
+                                $saveTag[$tag] = (string)$child->$tag;
                             }
 
                             if (isset($this->dtdStructure['table'][$table]['attlist'])) {
 
                                 foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
                                     $attName = $attlist['name'];
-                                    $saveTag[$attName] = (string)$row[0]->attributes()->$attName;
+                                    $saveTag[$attName] = (string)$child[0]->attributes()->$attName;
                                 }
                             }
 
-                            foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
-
-                                foreach ($tagGroup as $tag) {
-                                    $sField = $parent . "_" . $tag;
-                                    $saveTag[$sField] = (string)$row->$parent->$tag;
-                                }
-                            }
 
                             if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
 
@@ -516,24 +501,69 @@ class Xml_Parser
                                 $saveTag[$keyName] = $parentKey;
                             }
 
-                            //print_r($saveTag);
-                            $insertKey = $this->insertTableRow($saveTag, $table);
+                            file_put_contents($this->dumpFileDirPath, "\n" . $table . ' INSERT_VALUE_TYPE: ' . $saveTag, FILE_APPEND);
 
-                            $newTagTable = [];
+                            $this->insertTableRow($saveTag, $table);
 
-                            if (isset($this->dtdStructure['table'][$table]['relatedTable']) && count($this->dtdStructure['table'][$table]['relatedTable']) > 0) {
 
-                                foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                    $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
+                        } else {
+
+
+                            foreach ($child as $row) {
+
+                                $saveTag = [];
+
+                                foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
+                                    $saveTag[$tag] = (string)$row->$tag;
                                 }
 
-                                $this->load($row, $newTagTable, $insertKey, $table);
+                                if (isset($this->dtdStructure['table'][$table]['attlist'])) {
+
+                                    foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
+                                        $attName = $attlist['name'];
+                                        $saveTag[$attName] = (string)$row[0]->attributes()->$attName;
+                                    }
+                                }
+
+                                foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
+
+                                    foreach ($tagGroup as $tag) {
+                                        $sField = $parent . "_" . $tag;
+                                        $saveTag[$sField] = (string)$row->$parent->$tag;
+                                    }
+                                }
+
+                                if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
+
+                                    $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
+                                    $saveTag[$keyName] = $parentKey;
+                                }
+
+                                file_put_contents($this->dumpFileDirPath, "\n" . $table . ' INSERT: ' . $saveTag, FILE_APPEND);
+
+                                $insertKey = $this->insertTableRow($saveTag, $table);
+
+                                $newTagTable = [];
+
+                                if (isset($this->dtdStructure['table'][$table]['relatedTable']) && count($this->dtdStructure['table'][$table]['relatedTable']) > 0) {
+
+                                    foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
+                                        $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
+                                    }
+
+                                    file_put_contents($this->dumpFileDirPath, "\n" . $table . ' NEWTAGTABLE: ' . @implode(',', $newTagTable), FILE_APPEND);
+
+                                    $this->load($row, $newTagTable, $insertKey, $table);
+                                }
                             }
+
                         }
+
                     }
 
                 }
             }
+
         }
     }
 

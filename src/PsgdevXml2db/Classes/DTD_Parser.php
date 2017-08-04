@@ -45,14 +45,15 @@ class DTD_Parser
     protected $structure = [];
     protected $fields = [];
     protected $mergedNodeRelatedFields = [];
-    protected $ignoredFields = [];
-    protected $hasIgnored = false;
     protected $checkMerged = false;
     protected $rootElement = '';
     protected $dbStructure = [];
     protected $dtdTable = [];
     protected $multipleParent = [];
     protected $ignoredTable = []; //ignore tables - tables will not be filled, be carefull about relations between tables
+    protected $ignoredFields = [];
+    protected $hasIgnored = false;
+    protected $ignoredOptimisationTable = []; // tables ignored when optimisation = true
     protected $optimizedParentTable = []; // parents tables that had taken all properties of child
     protected $removeOptimizedChildKey = []; // child tables that had gaved all properties to parent table and removed from structure, so they foreign keys needs to be removed from their child tables
     protected $debugFilePath;
@@ -102,7 +103,7 @@ class DTD_Parser
      * @param string $table
      * @return boolean
      */
-    public function checkIgnoredTable($table)
+    protected function checkIgnoredTable($table)
     {
         if (empty($table) || empty($this->ignoredTable)) return false;
 
@@ -111,6 +112,29 @@ class DTD_Parser
         return false;
     }
 
+    /**
+     * setIgnoredOptimisationTable
+     *
+     * @param array $tArray
+     */
+    public function setIgnoredOptimisationTable($tArray = [])
+    {
+        if (is_array($tArray))
+            $this->ignoredOptimisationTable = $tArray;
+    }
+
+    /**
+     * isOptimisationTable
+     *
+     * @param string $table
+     * @return boolean
+     */
+    protected function isOptimisationTable($table)
+    {
+        if (!empty($table) && !in_array($table, $this->ignoredOptimisationTable)) return true;
+
+        return false;
+    }
 
     /**
      * setMergedNodeRelatedFields
@@ -207,6 +231,8 @@ class DTD_Parser
 
         $this->prepareTableStructure($this->rootElement);
         $this->relationalTableStructure($this->rootElement);
+
+        //Parser_Helper::nicePrint($this->dbStructure['table']);
 
         $this->correctDbStructure();
 
@@ -351,7 +377,7 @@ class DTD_Parser
 
                 if ($this->fields[$elem]['type'] != self::RELATION_TYPE_FIELD_VALUE) {
 
-                    if (!$this->checkIgnored($elem, $node)) {
+                    if (!$this->checkIgnoredField($elem, $node)) {
                         $this->structure[$elem]['many'] = Parser_Helper::isMultiple($e);
                         $this->structure[$node]['relationType'][$elem] = $this->structure[$elem]['many'] ? self::RELATION_TYPE_TABLE : $this->setRelationType($elem, $node);
                         $this->structure[$node]['relation'][] = $elem;
@@ -366,7 +392,7 @@ class DTD_Parser
 
                 } else {
 
-                    if (!$this->checkIgnored($elem, $node)) {
+                    if (!$this->checkIgnoredField($elem, $node)) {
 
                         if (!isset($this->structure[$elem]['many']) || !$this->structure[$elem]['many']) {
                             $this->structure[$elem]['many'] = Parser_Helper::isMultiple($e);
@@ -501,7 +527,7 @@ class DTD_Parser
     }
 
     /**
-     * checkIgnored
+     * checkIgnoredField
      *
      * recursive method - check if element set to be ignored
      *
@@ -509,7 +535,7 @@ class DTD_Parser
      * @param string $parentName
      * @return bool
      */
-    protected function checkIgnored($elemName, $parentName = '')
+    protected function checkIgnoredField($elemName, $parentName = '')
     {
 
         if ($this->hasIgnored == false) {
@@ -528,7 +554,7 @@ class DTD_Parser
 
                     if (is_array($val)) {
 
-                        return $this->checkIgnored($elemName);
+                        return $this->checkIgnoredField($elemName);
                     } else {
 
                         return $elemName == $val;
@@ -603,7 +629,7 @@ class DTD_Parser
 
                             if (!$this->checkIgnoredTable($node) && !isset($this->dbStructure['root_tag_table'][$node])) {
 
-                                if ($this->optimisation == true && isset($this->structure[$node]) && $this->structure[$node]['type'] == self::RELATION_TYPE_CONNECTOR) {
+                                if ($this->isOptimisationTable($node) && isset($this->structure[$node]) && $this->structure[$node]['type'] == self::RELATION_TYPE_CONNECTOR) {
                                     $this->dbStructure['root_tag_table'][$node] = $this->structure[$node]['relation'][0];
                                 } else {
                                     $this->dbStructure['root_tag_table'][$node] = $node;
@@ -635,7 +661,7 @@ class DTD_Parser
 
                             if (!$this->checkIgnoredTable($node)) $this->dbStructure['tag_table'][$node] = $node;
 
-                        } elseif ($this->optimisation == true && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent)) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
+                        } elseif ($this->isOptimisationTable($node) && ($this->structure[$parent]['type'] == self::RELATION_TYPE_CONNECTOR || $this->verifyRootDataConnector($parent)) && !isset($this->fields[$parent]['attlist']) && !isset($this->structure['multiParent'][$node])) {
 
                             if (!$this->checkIgnoredTable($parent)) {
                                 $this->dbStructure['tag_table'][$parent] = $node;
@@ -710,7 +736,8 @@ class DTD_Parser
                 switch ($cond) {
 
                     case "table":
-
+//print "TABLE: ".$node;
+//Parser_Helper::nicePrint($this->structure[$node]['parent']);
                         if (isset($this->structure[$node]['parent']) && !empty($this->structure[$node]['parent'][0])) {
 
                             foreach ($this->structure[$node]['parent'] as $prt) {
@@ -729,6 +756,12 @@ class DTD_Parser
 
                                     $this->pushToBeginning($pkey, $node);
 
+
+                                } elseif (!$this->isOptimisationTable($node) || !$this->isOptimisationTable($parent)) {
+
+                                    $pkey = 'z_' . $parent . '_ID';
+                                    $this->dbStructure['table'][$node]['parent']["$parent"] = $pkey;
+                                    $this->pushToBeginning($pkey, $node);
 
                                 } elseif ($this->optimisation == false) {
 
@@ -815,7 +848,7 @@ class DTD_Parser
     protected function getGrandParentDataConnectorTableName($parent)
     {
 
-        if ($this->optimisation == false) return '';
+        if (!$this->isOptimisationTable($parent)) return '';
 
         if (isset($this->structure[$parent]['parent'])
             && !empty($this->structure[$parent]['parent'][0])

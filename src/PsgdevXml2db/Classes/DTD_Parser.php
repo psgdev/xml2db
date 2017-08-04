@@ -219,6 +219,7 @@ class DTD_Parser
             $this->fields[$key]['type'] = $this->checkSpecification($val['desc'], $key);
         }
 
+        reset($this->fields); // important to set the pointer to the beginning
         $this->rootElement = key($this->fields);
 
         $this->checkForTable($this->rootElement);

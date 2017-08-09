@@ -454,15 +454,43 @@ class Xml_Parser
 
                         $insertKey = $this->insertTableRow($saveTag, $table);
 
+                        $relatedTableField = [];
+                        $relatedTableSaveTag = [];
+
+                        if(isset($this->dtdStructure['inlineTableRelated'][$table])) {
+
+                            foreach($this->dtdStructure['inlineTableRelated'][$table] as $relField) {
+
+                                $relatedTableField[$relField] = $table;
+
+                                foreach($row->$relField as $val) {
+                                    $relatedTableSaveTag[$relField] = $val;
+                                    $keyName = $this->dtdStructure['table'][$relField]['parent'][$table];
+                                    $relatedTableSaveTag[$keyName] = $insertKey;
+                                    $this->insertTableRow($relatedTableSaveTag, $relField);
+                                    $relatedTableSaveTag = [];
+                                }
+
+                            }
+
+                        }
+
                         $newTagTable = [];
 
                         if (isset($this->dtdStructure['table'][$table]['relatedTable'])) {
 
                             foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
+                                if(!isset($relatedTableField[$rtbl])) {
+                                    $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
+                                }
                             }
+
                             file_put_contents($this->dumpFileDirPath, "\n" . $table . ' NEWTAGTABLE: ' . @implode(',', $newTagTable), FILE_APPEND);
-                            $this->load($row, $newTagTable, $insertKey, $table);
+
+                            if(count($newTagTable) > 0) {
+                                $this->load($row, $newTagTable, $insertKey, $table);
+                            }
+
                         }
 
                     }
@@ -543,17 +571,42 @@ class Xml_Parser
 
                                 $insertKey = $this->insertTableRow($saveTag, $table);
 
+                                $relatedTableField = [];
+                                $relatedTableSaveTag = [];
+
+                                if(isset($this->dtdStructure['inlineTableRelated'][$table])) {
+
+                                    foreach($this->dtdStructure['inlineTableRelated'][$table] as $relField) {
+
+                                        $relatedTableField[$relField] = $table;
+
+                                        foreach($row->$relField as $val) {
+                                            $relatedTableSaveTag[$relField] = $val;
+                                            $keyName = $this->dtdStructure['table'][$relField]['parent'][$table];
+                                            $relatedTableSaveTag[$keyName] = $insertKey;
+                                            $this->insertTableRow($relatedTableSaveTag, $relField);
+                                            $relatedTableSaveTag = [];
+                                        }
+
+                                    }
+
+                                }
+
                                 $newTagTable = [];
 
                                 if (isset($this->dtdStructure['table'][$table]['relatedTable']) && count($this->dtdStructure['table'][$table]['relatedTable']) > 0) {
 
                                     foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                        $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
+                                        if(!isset($relatedTableField[$rtbl])) {
+                                            $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
+                                        }
                                     }
 
                                     file_put_contents($this->dumpFileDirPath, "\n" . $table . ' NEWTAGTABLE: ' . @implode(',', $newTagTable), FILE_APPEND);
 
-                                    $this->load($row, $newTagTable, $insertKey, $table);
+                                    if(count($newTagTable) > 0) {
+                                        $this->load($row, $newTagTable, $insertKey, $table);
+                                    }
                                 }
                             }
 
@@ -566,6 +619,9 @@ class Xml_Parser
 
         }
     }
+
+
+    //protected function removeFromNode
 
     /**
      * insertTableRow

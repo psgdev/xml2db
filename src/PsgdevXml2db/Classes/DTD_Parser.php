@@ -50,6 +50,7 @@ class DTD_Parser
     protected $dbStructure = [];
     protected $dtdTable = [];
     protected $multipleParent = [];
+    protected $inlineElementTableRelated = []; // element has a child that needs to be inserted in separate table (when a field set as multiple in dtd but it is an inline child element and doesn't have dataConnector parent)
     protected $ignoredTable = []; //ignore tables - tables will not be filled, be carefull about relations between tables
     protected $ignoredFields = [];
     protected $hasIgnored = false;
@@ -225,9 +226,13 @@ class DTD_Parser
         $this->checkForTable($this->rootElement);
         $this->dtdTable = array_unique($this->dtdTable);
         //Parser_Helper::nicePrint($this->dtdTable);
+
         $this->dbStructure['xml_root_element'] = $this->rootElement;
 
         $this->buildStructure($this->rootElement);
+        $this->dbStructure['inlineTableRelated'] = $this->inlineElementTableRelated;
+
+        //Parser_Helper::nicePrint($this->inlineElementTableRelated);
         $this->correctStructure();
 
         $this->prepareTableStructure($this->rootElement);
@@ -421,6 +426,11 @@ class DTD_Parser
 
                             if ($this->structure[$node]['relationType'][$elem] == self::RELATION_TYPE_TABLE) {
                                 $this->multipleParent[$elem][] = $node;
+
+                                // check if parent of table it's not a dataConnector => this field is an inline element in parent but need to be inserted in table with relation
+                                if($this->isInlineRelatedTableElement($elem, $node)) {
+                                    $this->inlineElementTableRelated[$node][] = $elem;
+                                }
                             }
 
                         }
@@ -428,6 +438,21 @@ class DTD_Parser
                 }
             }
         }
+    }
+
+
+    /**
+     * @param string $elem
+     * @param string $node
+     * @return bool
+     */
+    protected function isInlineRelatedTableElement($elem, $node) {
+
+        if($this->fields[$node]['type'] == self::RELATION_TYPE_CONNECTOR) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -811,6 +836,11 @@ class DTD_Parser
 
                         $foundKey = array_search($parent, $this->optimizedParentTable, true);
                         unset($this->optimizedParentTable["$foundKey"]);
+
+                        if(isset($this->dbStructure['inlineTableRelated'][$node])) {
+                            $this->dbStructure['inlineTableRelated'][$parent] = $this->dbStructure['inlineTableRelated'][$node];
+                            unset($this->dbStructure['inlineTableRelated'][$node]);
+                        }
 
                         $parentFields = $this->dbStructure['table'][$parent]['field'];
                         $parentParent = $this->dbStructure['table'][$parent]['parent'];

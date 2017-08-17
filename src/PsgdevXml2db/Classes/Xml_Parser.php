@@ -385,15 +385,26 @@ class Xml_Parser
 
 
     /**
-     * parse
+     * parse xml loaded from file
      */
     public function parse()
     {
-
         $xml = simplexml_load_file($this->xmlPath);
 
         //echo  var_export($xml, true);
         $this->load($xml, $this->dtdStructure['root_tag_table']);
+    }
+
+
+    /**
+     * parse xml sent through method (this method can be called in a loop)
+     * @param string $source
+     */
+    public function parseSource($source) {
+        if(empty($source)) {
+            die("Missing xml!");
+        }
+        $this->load($source, $this->dtdStructure['root_tag_table']);
     }
 
 

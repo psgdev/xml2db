@@ -264,9 +264,9 @@ class Xml_Parser
                     if ($this->dbx->rows < 1) {
 
                         if (strtolower($field) == 'id' || strstr(strtolower($field), '_id')) {
-                            $sql_alter .= " `$field` INT(10) UNSIGNED DEFAULT NULL,";
+                            $sql_alter .= " ADD `$field` INT(10) UNSIGNED DEFAULT NULL,";
                         } else {
-                            $sql_alter .= " `$field` VARCHAR(255) DEFAULT NULL,";
+                            $sql_alter .= " ADD `$field` VARCHAR(255) DEFAULT NULL,";
                         }
                     }
                 }

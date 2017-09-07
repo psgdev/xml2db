@@ -5,9 +5,10 @@
  * parse xml using parsed dtd and load the data into database
  *
  * in this version: xml_root_element, load() = changed to looop through root element used as dataConnector (type = 'root' but forced to act as dataConnector)
+ * logProcess switch and partial log defined by partialDebugLogXmlLoopElement, partialDebugLogStep
  *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v2.0
+ * @version aa-v2.1
  */
 
 namespace PsgdevXml2db;
@@ -28,6 +29,7 @@ class Xml_Parser
     public $systemTableFields = []; // like array(["xx_Created" => "datetime DEFAULT NULL", "xx_Modified" => "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "xx_Created_User" => "int(10) unsigned DEFAULT NULL", "xx_Modified_User" => "int(10) unsigned DEFAULT NULL"]
     public $systemTableFieldsDefaultValue = []; // like array(["xx_Created" => "[dbFunction]NOW()"], "xx_Created_User" => 1)
     public $htmlEntEncode = false;
+    public $logProcess = true; // log error always but processed data just if true
 
     /**
      * protected var
@@ -45,6 +47,9 @@ class Xml_Parser
     protected $ignoredTable = []; // ignore tables - tables will not be filled, be carefully about relations between tables
     protected $utf8mb4Table = []; // utf8mb4 tables needs to be handled properly
     protected $dumpFileDirPath; // dir path for logging
+    protected $partialDebugLogXmlLoopElement; // logging the process (errors are written always ), if not empty log only every 50th in loop
+    protected $partialDebugLogStep = 50;
+    protected $counter = 0;
 
     /**
      *
@@ -54,13 +59,24 @@ class Xml_Parser
      */
     public function __construct($xmlFilePath = '', $dtdRelationalStructure = [], $database = '')
     {
-
         $this->xmlPath = $xmlFilePath;
         $this->dtdStructure = $dtdRelationalStructure;
         $this->connectionArray = config('xml2db.databaseConnections.xml2db');
         $this->connectionArray['database'] = $database;
         $this->dumpFileDirPath = config('xml2db.dumpFileDirPath') . '/db_' . $database;
+    }
 
+
+    /**
+     * setLogStatusSwitch
+     *
+     * @param string $xmlElement
+     */
+    public function setPartialLogCountElement($xmlElement)
+    {
+        if (!empty($xmlElement)) {
+            $this->partialDebugLogXmlLoopElement = $xmlElement;
+        }
     }
 
     /**
@@ -264,9 +280,9 @@ class Xml_Parser
                     if ($this->dbx->rows < 1) {
 
                         if (strtolower($field) == 'id' || strstr(strtolower($field), '_id')) {
-                            $sql_alter .= " ADD `$field` INT(10) UNSIGNED DEFAULT NULL,";
+                            $sql_alter .= " `$field` INT(10) UNSIGNED DEFAULT NULL,";
                         } else {
-                            $sql_alter .= " ADD `$field` VARCHAR(255) DEFAULT NULL,";
+                            $sql_alter .= " `$field` VARCHAR(255) DEFAULT NULL,";
                         }
                     }
                 }
@@ -385,26 +401,15 @@ class Xml_Parser
 
 
     /**
-     * parse xml loaded from file
+     * parse
      */
     public function parse()
     {
+
         $xml = simplexml_load_file($this->xmlPath);
 
         //echo  var_export($xml, true);
         $this->load($xml, $this->dtdStructure['root_tag_table']);
-    }
-
-
-    /**
-     * parse xml sent through method (this method can be called in a loop)
-     * @param string $source
-     */
-    public function parseSource($source) {
-        if(empty($source)) {
-            die("Missing xml!");
-        }
-        $this->load($source, $this->dtdStructure['root_tag_table']);
     }
 
 
@@ -423,14 +428,16 @@ class Xml_Parser
 
                 if ($table == $xmlTag) {
 
-                    file_put_contents($this->dumpFileDirPath, "\n" . 'CASE_1: '.$table . ' PK: ' . $parentTable.'::'.$parentKey, FILE_APPEND);
-                    file_put_contents($this->dumpFileDirPath, "\n" . $table .' FIELDS: '. @implode(',', $this->dtdStructure['table'][$table]['node']), FILE_APPEND);
+                    $this->logProcess('CASE_1: ' . $table . ' PK: ' . $parentTable . '::' . $parentKey);
+                    $this->logProcess($table . ' FIELDS: ' . @implode(', ', $this->dtdStructure['table'][$table]['node']));
 
                     if (!empty($parentTable)) {
-                        file_put_contents($this->dumpFileDirPath, "\n" . $table . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable], FILE_APPEND);
+                        $this->logProcess($table . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable]);
                     }
 
                     foreach ($xml->$table as $row) {
+
+                        //file_put_contents($this->dumpFileDirPath, "\n" . date("H:i:s, Ymd") . ": XML_TAG: " . $xmlTag . " XT-CASE_1", FILE_APPEND);
 
                         $saveTag = [];
 
@@ -461,20 +468,20 @@ class Xml_Parser
                             $saveTag[$keyName] = $parentKey;
                         }
 
-                        file_put_contents($this->dumpFileDirPath, "\n" . $table . ' INSERT: ' . $saveTag,FILE_APPEND);
+                        $this->logProcess($table . ' INSERT: ' . @implode(", ", $saveTag));
 
                         $insertKey = $this->insertTableRow($saveTag, $table);
 
                         $relatedTableField = [];
                         $relatedTableSaveTag = [];
 
-                        if(isset($this->dtdStructure['inlineTableRelated'][$table])) {
+                        if (isset($this->dtdStructure['inlineTableRelated'][$table])) {
 
-                            foreach($this->dtdStructure['inlineTableRelated'][$table] as $relField) {
+                            foreach ($this->dtdStructure['inlineTableRelated'][$table] as $relField) {
 
                                 $relatedTableField[$relField] = $table;
 
-                                foreach($row->$relField as $val) {
+                                foreach ($row->$relField as $val) {
                                     $relatedTableSaveTag[$relField] = $val;
                                     $keyName = $this->dtdStructure['table'][$relField]['parent'][$table];
                                     $relatedTableSaveTag[$keyName] = $insertKey;
@@ -491,14 +498,14 @@ class Xml_Parser
                         if (isset($this->dtdStructure['table'][$table]['relatedTable'])) {
 
                             foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                if(!isset($relatedTableField[$rtbl])) {
+                                if (!isset($relatedTableField[$rtbl])) {
                                     $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
                                 }
                             }
 
-                            file_put_contents($this->dumpFileDirPath, "\n" . $table . ' NEWTAGTABLE: ' . @implode(',', $newTagTable), FILE_APPEND);
+                            $this->logProcess($table . ' NEWTAGTABLE: ' . @implode(', ', $newTagTable));
 
-                            if(count($newTagTable) > 0) {
+                            if (count($newTagTable) > 0) {
                                 $this->load($row, $newTagTable, $insertKey, $table);
                             }
 
@@ -508,16 +515,18 @@ class Xml_Parser
 
                 } else {
 
-                    file_put_contents($this->dumpFileDirPath, "\n" . 'CASE_2: '.$table . ' PK: ' . $parentTable.'::'.$parentKey, FILE_APPEND);
-                    file_put_contents($this->dumpFileDirPath, "\n" . $table .' FIELDS: '. @implode(',', $this->dtdStructure['table'][$table]['node']), FILE_APPEND);
+                    $this->logProcess('CASE_2: ' . $table . ' PK: ' . $parentTable . '::' . $parentKey);
+                    $this->logProcess($table . ' FIELDS: ' . @implode(', ', $this->dtdStructure['table'][$table]['node']));
 
                     if (!empty($parentTable)) {
-                        file_put_contents($this->dumpFileDirPath, "\n" . $table . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable], FILE_APPEND);
+                        $this->logProcess($table . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable]);
                     }
 
                     foreach ($xml->$table as $child) {
 
-                        if($this->dtdStructure['table'][$table]['type'] == DTD_Parser::RELATION_TYPE_FIELD_VALUE) {
+                        //file_put_contents($this->dumpFileDirPath, "\n" . date("H:i:s, Ymd") . ": XML_TAG: " . $xmlTag . " XT_CASE_2", FILE_APPEND);
+
+                        if ($this->dtdStructure['table'][$table]['type'] == DTD_Parser::RELATION_TYPE_FIELD_VALUE) {
 
                             $saveTag = [];
 
@@ -540,7 +549,7 @@ class Xml_Parser
                                 $saveTag[$keyName] = $parentKey;
                             }
 
-                            file_put_contents($this->dumpFileDirPath, "\n" . $table . ' INSERT_VALUE_TYPE: ' . $saveTag, FILE_APPEND);
+                            $this->logProcess($table . ' INSERT_VALUE_TYPE: ' . @implode(", ", $saveTag));
 
                             $this->insertTableRow($saveTag, $table);
 
@@ -578,20 +587,20 @@ class Xml_Parser
                                     $saveTag[$keyName] = $parentKey;
                                 }
 
-                                file_put_contents($this->dumpFileDirPath, "\n" . $table . ' INSERT: ' . $saveTag, FILE_APPEND);
+                                $this->logProcess($table . ' INSERT: ' . @implode(", ", $saveTag));
 
                                 $insertKey = $this->insertTableRow($saveTag, $table);
 
                                 $relatedTableField = [];
                                 $relatedTableSaveTag = [];
 
-                                if(isset($this->dtdStructure['inlineTableRelated'][$table])) {
+                                if (isset($this->dtdStructure['inlineTableRelated'][$table])) {
 
-                                    foreach($this->dtdStructure['inlineTableRelated'][$table] as $relField) {
+                                    foreach ($this->dtdStructure['inlineTableRelated'][$table] as $relField) {
 
                                         $relatedTableField[$relField] = $table;
 
-                                        foreach($row->$relField as $val) {
+                                        foreach ($row->$relField as $val) {
                                             $relatedTableSaveTag[$relField] = $val;
                                             $keyName = $this->dtdStructure['table'][$relField]['parent'][$table];
                                             $relatedTableSaveTag[$keyName] = $insertKey;
@@ -608,14 +617,14 @@ class Xml_Parser
                                 if (isset($this->dtdStructure['table'][$table]['relatedTable']) && count($this->dtdStructure['table'][$table]['relatedTable']) > 0) {
 
                                     foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                        if(!isset($relatedTableField[$rtbl])) {
+                                        if (!isset($relatedTableField[$rtbl])) {
                                             $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
                                         }
                                     }
 
-                                    file_put_contents($this->dumpFileDirPath, "\n" . $table . ' NEWTAGTABLE: ' . @implode(',', $newTagTable), FILE_APPEND);
+                                    $this->logProcess($table . ' NEWTAGTABLE: ' . @implode(', ', $newTagTable));
 
-                                    if(count($newTagTable) > 0) {
+                                    if (count($newTagTable) > 0) {
                                         $this->load($row, $newTagTable, $insertKey, $table);
                                     }
                                 }
@@ -663,6 +672,10 @@ class Xml_Parser
             $this->dbx->setConnectionUTF8mb4Uni();
         }
 
+        if (!empty($this->partialDebugLogXmlLoopElement) && $this->partialDebugLogXmlLoopElement == $table) {
+            $this->counter++;
+        }
+
         $this->dbx->create($table, $saveTag);
 
         //print "<br>".$this->dbx->currentQuery."<br>";
@@ -694,17 +707,47 @@ class Xml_Parser
     }
 
     /**
-     * @param Musqlidb $this ->dbx
      * @param string $str
      */
     protected function checkIsValidQuery($str = '')
     {
         if (!empty($str)) {
             file_put_contents($this->dumpFileDirPath, "\n" . $str, FILE_APPEND);
-        } elseif (!is_null($this->dbx)) {
-            if ($this->dbx->isError()) {
-                file_put_contents($this->dumpFileDirPath, "\n" . $this->dbx->getError(), FILE_APPEND);
-            }
+        } elseif (!is_null($this->dbx) && $this->dbx->isError()) {
+            file_put_contents($this->dumpFileDirPath, "\n" . $this->dbx->getError(), FILE_APPEND);
+        }
+    }
+
+    /**
+     * toLog
+     *
+     * @return bool
+     */
+    protected function toLog()
+    {
+
+        if (!$this->logProcess) return false;
+
+        if (empty($this->partialDebugLogXmlLoopElement)) {
+            return true;
+        }
+
+        if ($this->counter == 0 || (($this->counter - 1) % $this->partialDebugLogStep == 0)) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * logProcess
+     *
+     * @param string $message
+     */
+    public function logProcess($message)
+    {
+        if ($this->toLog()) {
+            file_put_contents($this->dumpFileDirPath, "\n" . date("H:i:s, Ymd") . ": " . $message, FILE_APPEND);
         }
     }
 

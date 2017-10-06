@@ -4,10 +4,14 @@
  * DTD_Parser
  * parse DTD and prepare structure for tables and parsing xml file with XML_Parser
  *
- * in this version: xml_root_element, verifyRootDataConnector() = root element as dataConnector if possible (type = 'root' but forced to act as dataConnector)
+ * v2.1: corrected issue when root element is realy a dataConnector defined in $fields array
+ *       IMPORTANT: Has known bug to not remove foreign key from root_tag_table element after optimization (parent takes child fields)
+ *                  !!! Not tested without optimization !!!
+ *       NEEDS CHANGES IN THE PROCESS RELATED TO root_tag_table, root and data types of these elements when creating structure and table definitions
+ * v2.0: xml_root_element, verifyRootDataConnector() = root element as dataConnector if possible (type = 'root' but forced to act as dataConnector)
  *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v2.0
+ * @version aa-v2.1
  */
 
 namespace PsgdevXml2db;
@@ -244,6 +248,7 @@ class DTD_Parser
 
         // OPTIMIZATION OF TABLES IF SET TO TRUE
         if ($this->optimisation == true) {
+            //print_r($this->optimizedParentTable);
             $this->optimizeTables($this->rootElement);
         }
 
@@ -831,8 +836,7 @@ class DTD_Parser
 
                 case "table":
 
-
-                    if ($parentType == self::RELATION_TYPE_CONNECTOR && in_array($parent, $this->optimizedParentTable) && $this->structure[$parent]['relation'][0] == $node) {
+                    if ( ($parentType == self::RELATION_TYPE_CONNECTOR || ($parentType == self::RELATION_TYPE_ROOT && $this->fields["$parent"]["type"] == self::RELATION_TYPE_CONNECTOR) ) && in_array($parent, $this->optimizedParentTable) && $this->structure[$parent]['relation'][0] == $node) {
 
                         $foundKey = array_search($parent, $this->optimizedParentTable, true);
                         unset($this->optimizedParentTable["$foundKey"]);
@@ -847,9 +851,28 @@ class DTD_Parser
 
                         $this->dbStructure['table'][$parent] = $this->dbStructure['table'][$node];
 
+//                        if($parent == 'SESSIONS') {
+////                            print_r($parentFields);
+////                            print_r($parentParent);
+//                            print "***NODE***";
+//                            print_r($this->dbStructure['table'][$node]);
+//                            print "***PARENT**";
+//                            print_r($this->dbStructure['table'][$parent]);
+//                            print "|||MERGE_1|||";
+//                            print_r($parentFields);
+//                            print "|||MERGE_2|||";
+//                            print_r($this->dbStructure['table'][$parent]['field']);
+//                        }
+//                        exit;
+
                         $this->removeOptimizedChildKey[$node] = 'z_' . $node . '_ID';
 
-                        $this->dbStructure['table'][$parent]['field'] = array_merge($parentFields, $this->dbStructure['table'][$parent]['field']);
+                        if($parentType == self::RELATION_TYPE_ROOT && $this->fields["$parent"]["type"] == self::RELATION_TYPE_CONNECTOR) {
+
+                        } else {
+                            $this->dbStructure['table'][$parent]['field'] = array_merge($parentFields, $this->dbStructure['table'][$parent]['field']);
+                        }
+
                         $this->dbStructure['table'][$parent]['parent'] = $parentParent;
 
                         $this->dbStructure['unset_table']['table'][$node] = $this->dbStructure['table'][$node];
@@ -867,6 +890,7 @@ class DTD_Parser
         }
 
         foreach ($this->structure[$node]['relation'] as $val) {
+            //print $val.':'.$node.':'.$this->structure[$node]['relationType'][$val].':'.$this->structure[$node]['type'].'|';
             $this->optimizeTables($val, $node, $this->structure[$node]['relationType'][$val], $this->structure[$node]['type']);
         }
     }

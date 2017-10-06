@@ -4,8 +4,9 @@
  * Xml_Parser
  * parse xml using parsed dtd and load the data into database
  *
- * in this version: xml_root_element, load() = changed to looop through root element used as dataConnector (type = 'root' but forced to act as dataConnector)
- * logProcess switch and partial log defined by partialDebugLogXmlLoopElement, partialDebugLogStep
+ * v2.1: logProcess switch and partial log defined by partialDebugLogXmlLoopElement, partialDebugLogStep
+ *
+ * IMPORTANT: no version change but => changed to use xml_root_element as the staring element in loop ( initialized in parse() method )
  *
  * @author Tibor(tibor@planetsg.com)
  * @version aa-v2.1
@@ -409,7 +410,7 @@ class Xml_Parser
         $xml = simplexml_load_file($this->xmlPath);
 
         //echo  var_export($xml, true);
-        $this->load($xml, $this->dtdStructure['root_tag_table']);
+        $this->load($xml, $this->dtdStructure['xml_root_element']); //$this->dtdStructure['root_tag_table']
     }
 
 

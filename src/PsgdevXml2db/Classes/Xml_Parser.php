@@ -408,7 +408,7 @@ class Xml_Parser
         $xml = simplexml_load_file($this->xmlPath);
 
         //echo  var_export($xml, true);
-        $this->load($xml, $this->dtdStructure['root_tag_table']);
+        $this->load($xml, $this->dtdStructure['root_tag_table']); // THIS SI AN ARRAY!!!! $this->dtdStructure['root_tag_table']
     }
 
 

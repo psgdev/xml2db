@@ -22,7 +22,7 @@ class Xml_Parser
      */
 
     /**
-     * $systemTableFields & $systemTableFieldsDefaultValue are optional, these fields can me managed in the extended ORM or extenden custom DM
+     * $systemTableFields & $systemTableFieldsDefaultValue are optional, these fields can be managed in the extended ORM or extenden custom DM
      * public var
      */
     public $systemTableFields = []; // like array(["xx_Created" => "datetime DEFAULT NULL", "xx_Modified" => "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "xx_Created_User" => "int(10) unsigned DEFAULT NULL", "xx_Modified_User" => "int(10) unsigned DEFAULT NULL"]

@@ -6,6 +6,7 @@
  *
  * v2.1: corrected issue when root element is realy a dataConnector defined in $fields array
  *       IMPORTANT: Has known bug to not remove foreign key from root_tag_table element after optimization (parent takes child fields)
+ *                  !!! DOES NOT BOTHER THE PROCESS !!!
  *                  !!! Not tested without optimization !!!
  *       NEEDS CHANGES IN THE PROCESS RELATED TO root_tag_table, root and data types of these elements when creating structure and table definitions
  * v2.0: xml_root_element, verifyRootDataConnector() = root element as dataConnector if possible (type = 'root' but forced to act as dataConnector)

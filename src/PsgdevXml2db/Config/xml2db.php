@@ -20,7 +20,6 @@ return [
                 'strict' => false,
                 'engine' => 'MYISAM'
             ]
-        ],
-    'fil'
+        ]
 
     ];

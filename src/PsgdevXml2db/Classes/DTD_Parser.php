@@ -4,6 +4,8 @@
  * DTD_Parser
  * parse DTD and prepare structure for tables and parsing xml file with XML_Parser
  *
+ *
+ * v2.2: just added information about multiple child elements as $this->dbStructure['table'][$node]['many']
  * v2.1: corrected issue when root element is realy a dataConnector defined in $fields array
  *       IMPORTANT: Has known bug to not remove foreign key from root_tag_table element after optimization (parent takes child fields)
  *                  !!! DOES NOT BOTHER THE PROCESS !!!
@@ -12,7 +14,7 @@
  * v2.0: xml_root_element, verifyRootDataConnector() = root element as dataConnector if possible (type = 'root' but forced to act as dataConnector)
  *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v2.1
+ * @version aa-v2.2
  */
 
 namespace PsgdevXml2db;
@@ -25,8 +27,9 @@ class DTD_Parser
     /**
      * This class creates table structures and relational data used for parsing xml defined with dtd - dbStructure array
      * It can work with optimisation enabled or disabled
-     * Optimisation are set before run method - results less tables throug merging tables where is a possible and allowed by the dtd structure
-     * root_tag_table and tag_table definition in dbStructure used in xml parser to know what are the main element from the root element declaration and what tables are optimised    merging child into parent element or left as it is defined in the dtd
+     * Optimisation are set before run method - results less tables through merging tables where is a possible and allowed by the dtd structure
+     * root_tag_table and tag_table definition in dbStructure used in xml parser to know what are the main element from the root element declaration and what tables are optimised
+     * merging child into parent element or left as it is defined in the dtd
      */
 
     /**
@@ -346,8 +349,8 @@ class DTD_Parser
                 $this->structure[$node]['field'] = [];
             }
 
-            if (!isset($this->structure[$node]['node'])) {
-                $this->structure[$node]['node'] = [];
+            if (!isset($this->structure[$node]['many'])) {
+                $this->structure[$node]['many'] = false;
             }
 
 
@@ -434,7 +437,7 @@ class DTD_Parser
                                 $this->multipleParent[$elem][] = $node;
 
                                 // check if parent of table it's not a dataConnector => this field is an inline element in parent but need to be inserted in table with relation
-                                if($this->isInlineRelatedTableElement($elem, $node)) {
+                                if ($this->isInlineRelatedTableElement($elem, $node)) {
                                     $this->inlineElementTableRelated[$node][] = $elem;
                                 }
                             }
@@ -452,9 +455,10 @@ class DTD_Parser
      * @param string $node
      * @return bool
      */
-    protected function isInlineRelatedTableElement($elem, $node) {
+    protected function isInlineRelatedTableElement($elem, $node)
+    {
 
-        if($this->fields[$node]['type'] == self::RELATION_TYPE_CONNECTOR) {
+        if ($this->fields[$node]['type'] == self::RELATION_TYPE_CONNECTOR) {
             return false;
         }
 
@@ -672,8 +676,10 @@ class DTD_Parser
 
                         $this->dbStructure['table'][$node]['type'] = $this->structure[$node]['type'];
                         $this->dbStructure['table'][$node]['field'] = $this->structure[$node]['field'];
-                        $this->dbStructure['table'][$node]['node'] = $this->structure[$node]['field'];
+                        $this->dbStructure['table'][$node]['node'] = $this->structure[$node]['field']; // node list will be corrected later and removed all system fields
                         $this->dbStructure['table'][$node]['attlist'] = $this->structure[$node]['attlist'];
+                        $this->dbStructure['table'][$node]['many'] = $this->structure[$node]['many']; // if needed for parsing multiple CDATA childs - KEYWORD, FINAL_ID
+
                         $this->dbStructure['table'][$node]['parent'] = [];
 
 
@@ -698,7 +704,7 @@ class DTD_Parser
                             if (!$this->checkIgnoredTable($parent)) {
                                 $this->dbStructure['tag_table'][$parent] = $node;
 
-                                if( !isset($this->optimizedParentTable["$parent"]) ) {
+                                if (!isset($this->optimizedParentTable["$parent"])) {
                                     $this->optimizedParentTable["$parent"] = $parent;
                                 }
                             }
@@ -837,12 +843,12 @@ class DTD_Parser
 
                 case "table":
 
-                    if ( ($parentType == self::RELATION_TYPE_CONNECTOR || ($parentType == self::RELATION_TYPE_ROOT && $this->fields["$parent"]["type"] == self::RELATION_TYPE_CONNECTOR) ) && in_array($parent, $this->optimizedParentTable) && $this->structure[$parent]['relation'][0] == $node) {
+                    if (($parentType == self::RELATION_TYPE_CONNECTOR || ($parentType == self::RELATION_TYPE_ROOT && $this->fields["$parent"]["type"] == self::RELATION_TYPE_CONNECTOR)) && in_array($parent, $this->optimizedParentTable) && $this->structure[$parent]['relation'][0] == $node) {
 
                         $foundKey = array_search($parent, $this->optimizedParentTable, true);
                         unset($this->optimizedParentTable["$foundKey"]);
 
-                        if(isset($this->dbStructure['inlineTableRelated'][$node])) {
+                        if (isset($this->dbStructure['inlineTableRelated'][$node])) {
                             $this->dbStructure['inlineTableRelated'][$parent] = $this->dbStructure['inlineTableRelated'][$node];
                             unset($this->dbStructure['inlineTableRelated'][$node]);
                         }
@@ -868,7 +874,7 @@ class DTD_Parser
 
                         $this->removeOptimizedChildKey[$node] = 'z_' . $node . '_ID';
 
-                        if($parentType == self::RELATION_TYPE_ROOT && $this->fields["$parent"]["type"] == self::RELATION_TYPE_CONNECTOR) {
+                        if ($parentType == self::RELATION_TYPE_ROOT && $this->fields["$parent"]["type"] == self::RELATION_TYPE_CONNECTOR) {
 
                         } else {
                             $this->dbStructure['table'][$parent]['field'] = array_merge($parentFields, $this->dbStructure['table'][$parent]['field']);

@@ -4,10 +4,12 @@
  * Xml_Parser
  * parse xml using parsed dtd and load the data into database
  *
+ * v2.2: Bug correction in parsing multiple CDATA values - rewrite of the block: $table != $xmlTag in load method
+ *       Added export of arrays to string in log process
  * v2.1: logProcess switch and partial log defined by partialDebugLogXmlLoopElement, partialDebugLogStep
  *
  * @author Tibor(tibor@planetsg.com)
- * @version aa-v2.1
+ * @version aa-v2.2
  */
 
 namespace PsgdevXml2db;
@@ -521,111 +523,99 @@ class Xml_Parser
                         $this->logProcess($table . ' keyName for parentTable: ' . $parentTable . ' value: ' . $this->dtdStructure['table'][$table]['parent'][$parentTable]);
                     }
 
-                    foreach ($xml->$table as $child) {
+                    foreach ($xml->$table->children() as $row) {
 
-                        //file_put_contents($this->dumpFileDirPath, "\n" . date("H:i:s, Ymd") . ": XML_TAG: " . $xmlTag . " XT_CASE_2", FILE_APPEND);
+                        $saveTag = [];
 
-                        if ($this->dtdStructure['table'][$table]['type'] == DTD_Parser::RELATION_TYPE_FIELD_VALUE) {
-
-                            $saveTag = [];
+                        if ($this->dtdStructure['table'][$table]['type'] != DTD_Parser::RELATION_TYPE_FIELD_VALUE) {
 
                             foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
-                                $saveTag[$tag] = (string)$child->$tag;
+                                $saveTag[$tag] = (string)$row->$tag;
                             }
 
-                            if (isset($this->dtdStructure['table'][$table]['attlist'])) {
+                        } else {
 
-                                foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
-                                    $attName = $attlist['name'];
-                                    $saveTag[$attName] = (string)$child[0]->attributes()->$attName;
+                            $tag = $row->getName();
+                            $saveTag[$tag] = (string)$row;
+
+                        }
+
+                        if (isset($this->dtdStructure['table'][$table]['attlist'])) {
+
+                            foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
+                                $attName = $attlist['name'];
+                                $saveTag[$attName] = (string)$row[0]->attributes()->$attName;
+                            }
+
+                        }
+
+                        if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
+
+                            $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
+                            $saveTag[$keyName] = $parentKey;
+
+                        }
+
+
+                        if ($this->dtdStructure['table'][$table]['type'] != DTD_Parser::RELATION_TYPE_FIELD_VALUE) {
+
+                            foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
+
+                                foreach ($tagGroup as $tag) {
+                                    $sField = $parent . "_" . $tag;
+                                    $saveTag[$sField] = (string)$row->$parent->$tag;
                                 }
                             }
 
+                        }
 
-                            if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
-
-                                $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
-                                $saveTag[$keyName] = $parentKey;
-                            }
+                        if ($this->dtdStructure['table'][$table]['type'] == DTD_Parser::RELATION_TYPE_FIELD_VALUE) {
 
                             $this->logProcess($table . ' INSERT_VALUE_TYPE: ' . @implode(", ", $saveTag));
 
                             $this->insertTableRow($saveTag, $table);
 
-
                         } else {
 
+                            $this->logProcess($table . ' INSERT: ' . @implode(", ", $saveTag));
 
-                            foreach ($child as $row) {
+                            $insertKey = $this->insertTableRow($saveTag, $table);
 
-                                $saveTag = [];
+                            $relatedTableField = [];
+                            $relatedTableSaveTag = [];
 
-                                foreach ($this->dtdStructure['table'][$table]['node'] as $tag) {
-                                    $saveTag[$tag] = (string)$row->$tag;
-                                }
+                            if (isset($this->dtdStructure['inlineTableRelated'][$table])) {
 
-                                if (isset($this->dtdStructure['table'][$table]['attlist'])) {
+                                foreach ($this->dtdStructure['inlineTableRelated'][$table] as $relField) {
 
-                                    foreach ($this->dtdStructure['table'][$table]['attlist'] as $attlist) {
-                                        $attName = $attlist['name'];
-                                        $saveTag[$attName] = (string)$row[0]->attributes()->$attName;
-                                    }
-                                }
+                                    $relatedTableField[$relField] = $table;
 
-                                foreach ($this->dtdStructure['table'][$table]['mergeNode'] as $parent => $tagGroup) {
-
-                                    foreach ($tagGroup as $tag) {
-                                        $sField = $parent . "_" . $tag;
-                                        $saveTag[$sField] = (string)$row->$parent->$tag;
-                                    }
-                                }
-
-                                if (!is_null($parentKey) && is_numeric($parentKey) && $parentTable != '') {
-
-                                    $keyName = $this->dtdStructure['table'][$table]['parent'][$parentTable];
-                                    $saveTag[$keyName] = $parentKey;
-                                }
-
-                                $this->logProcess($table . ' INSERT: ' . @implode(", ", $saveTag));
-
-                                $insertKey = $this->insertTableRow($saveTag, $table);
-
-                                $relatedTableField = [];
-                                $relatedTableSaveTag = [];
-
-                                if (isset($this->dtdStructure['inlineTableRelated'][$table])) {
-
-                                    foreach ($this->dtdStructure['inlineTableRelated'][$table] as $relField) {
-
-                                        $relatedTableField[$relField] = $table;
-
-                                        foreach ($row->$relField as $val) {
-                                            $relatedTableSaveTag[$relField] = $val;
-                                            $keyName = $this->dtdStructure['table'][$relField]['parent'][$table];
-                                            $relatedTableSaveTag[$keyName] = $insertKey;
-                                            $this->insertTableRow($relatedTableSaveTag, $relField);
-                                            $relatedTableSaveTag = [];
-                                        }
-
+                                    foreach ($row->$relField as $val) {
+                                        $relatedTableSaveTag[$relField] = $val;
+                                        $keyName = $this->dtdStructure['table'][$relField]['parent'][$table];
+                                        $relatedTableSaveTag[$keyName] = $insertKey;
+                                        $this->insertTableRow($relatedTableSaveTag, $relField);
+                                        $relatedTableSaveTag = [];
                                     }
 
                                 }
 
-                                $newTagTable = [];
+                            }
 
-                                if (isset($this->dtdStructure['table'][$table]['relatedTable']) && count($this->dtdStructure['table'][$table]['relatedTable']) > 0) {
+                            $newTagTable = [];
 
-                                    foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
-                                        if (!isset($relatedTableField[$rtbl])) {
-                                            $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
-                                        }
+                            if (isset($this->dtdStructure['table'][$table]['relatedTable']) && count($this->dtdStructure['table'][$table]['relatedTable']) > 0) {
+
+                                foreach ($this->dtdStructure['table'][$table]['relatedTable'] as $rtbl) {
+                                    if (!isset($relatedTableField[$rtbl])) {
+                                        $newTagTable[$rtbl] = isset($this->dtdStructure['tag_table'][$rtbl]) ? $this->dtdStructure['tag_table'][$rtbl] : $rtbl;
                                     }
+                                }
 
-                                    $this->logProcess($table . ' NEWTAGTABLE: ' . @implode(', ', $newTagTable));
+                                $this->logProcess($table . ' NEWTAGTABLE: ' . @implode(', ', $newTagTable));
 
-                                    if (count($newTagTable) > 0) {
-                                        $this->load($row, $newTagTable, $insertKey, $table);
-                                    }
+                                if (count($newTagTable) > 0) {
+                                    $this->load($row, $newTagTable, $insertKey, $table);
                                 }
                             }
 
@@ -640,12 +630,10 @@ class Xml_Parser
     }
 
 
-    //protected function removeFromNode
-
     /**
      * insertTableRow
      *
-     * @param string $saveTag
+     * @param array $saveTag
      * @param string $table
      * @return int
      */
@@ -746,6 +734,9 @@ class Xml_Parser
     public function logProcess($message)
     {
         if ($this->toLog()) {
+            if (is_array($message)) {
+                $message = var_export($message, true);
+            }
             file_put_contents($this->dumpFileDirPath, "\n" . date("H:i:s, Ymd") . ": " . $message, FILE_APPEND);
         }
     }
